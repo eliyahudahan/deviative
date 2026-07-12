@@ -10,6 +10,12 @@
 09.07	PostgreSQL	psycopg2.OperationalError	PostgreSQL לא רץ → צריך Docker
 09.07	Docker	docker run -d ...	הרצת DB בקופסה
 12.07	PostgreSQL	host=localhost + פרטי התחברות נכונים	psycopg2 דורש TCP/IP ל-Docker; dbname, user, password חייבים להתאים
+12.07	commit ללא git	git commit -m "..."	Git – תמיד עם git
+12.07	information_schema_tables	information_schema.tables	PostgreSQL – Schema + נקודה
+12.07	"""" (4 מירכאות)	""" (3 מירכאות)	Python – מחרוזות רב-שורתיות עם 3 מירכאות
+12.07	SEARIAL	SERIAL	SQL – אוטו-אינקרמנט = SERIAL
+12.07	conn.close() עם סוגריים	conn.close()	Python – פונקציות בלי סוגריים מיותרים
+
 
 
 | Date | Task | Solution | Lesson Learned |
@@ -26,3 +32,8 @@
 | Date | Task | Solution | Lesson Learned |
 |------|------|----------|----------------|
 | 12.07 | PostgreSQL | `host=localhost` + correct credentials | psycopg2 requires TCP/IP for Docker; `dbname`, `user`, and `password` must match the container configuration |
+| 12.07	commit without git	git commit -m "..."	Git – always use git prefix
+| 12.07	information_schema_tables	information_schema.tables	PostgreSQL – schema + dot notation
+| 12.07	"""" (4 quotes)	""" (3 quotes)	Python – multi-line strings use 3 quotes
+| 12.07	SEARIAL	SERIAL	SQL – auto-increment is SERIAL
+| 12.07	conn.close() with extra parentheses	conn.close()	Python – functions without extra parentheses
