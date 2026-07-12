@@ -6,7 +6,7 @@ load_dotenv()
 
 conn = psycopg2.connect(
     dbname=os.getenv("dbname"),
-    user=os.getenv("user_db"),      # תוודא שהמשתנים ב-.env תואמים
+    user=os.getenv("user_db"),       # make sure that variables adjusted to .env file
     password=os.getenv("password_db"),
     host=os.getenv("host_db")
 )
