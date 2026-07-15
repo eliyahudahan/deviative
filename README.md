@@ -77,6 +77,42 @@ text
 
 ---
 
+## 📊 AIS Data Columns (17 original + 8 derived)
+
+| # | Column Name | Description |
+|---|-------------|-------------|
+| 0 | `mmsi` | Unique vessel identifier |
+| 1 | `base_date_time` | Timestamp (UTC) |
+| 2 | `longitude` | Longitude |
+| 3 | `latitude` | Latitude |
+| 4 | `sog` | Speed Over Ground (knots) |
+| 5 | `cog` | Course Over Ground (degrees) |
+| 6 | `heading` | Compass heading (degrees) |
+| 7 | `vessel_name` | Vessel name |
+| 8 | `imo` | IMO number |
+| 9 | `call_sign` | Call sign |
+| 10 | `vessel_type` | Vessel type code |
+| 11 | `status` | Navigation status |
+| 12 | `length` | Length (meters) |
+| 13 | `width` | Width (meters) |
+| 14 | `draft` | Draft (meters) |
+| 15 | `cargo` | Cargo type code |
+| 16 | `transceiver` | AIS transceiver type |
+
+**Derived Features (added after merge):**
+
+| # | Column Name | Description |
+|---|-------------|-------------|
+| 17 | `time` | Timestamp (weather merge key) |
+| 18 | `temperature_2m` | Temperature (°C) |
+| 19 | `wind_speed_10m` | Wind speed (km/h) |
+| 20 | `wind_direction_10m` | Wind direction (degrees) |
+| 21 | `wind_gusts_10m` | Wind gusts (km/h) |
+| 22 | `sog_diff` | Speed change between readings |
+| 23 | `cog_diff` | Course change between readings |
+| 24 | `rot` | Rate of Turn (heading change) |
+
+
 ## 📚 Research Basis
 
 | Paper | Contribution |
