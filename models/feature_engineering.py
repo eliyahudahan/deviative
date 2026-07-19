@@ -22,6 +22,9 @@ df['sog_diff'] = df['sog'] - df['sog'].shift(1)
 df['cog_diff'] = df['cog'] - df['cog'].shift(1)
 df['rot'] = df['heading'] - df['heading'].shift(1)
 
+#Conver base date time for computing
+df['base_date_time'] = pd.to_datetime(df['base_date_time'])
+
 # Step 1: Status
 df.sort_values('base_date_time')
 df['status'] = 'maneuvering'
@@ -31,6 +34,7 @@ df.loc[df['sog']<0.5, 'status'] = 'anchoring'
 df['status_change'] = df['status'] != df['status'].shift(1)
 
 # Step 3: Computing time
+
 df['time_diff'] = df.groupby('mmsi')['base_date_time'].diff().dt.total_seconds() / 3600
 
 # Step 4: Total time any condition
@@ -40,7 +44,9 @@ time_per_status = df[df['status_change']].groupby(['mmsi', 'status'])['time_diff
 print("=== After renaming and features ===")
 print(df[['sog', 'sog_diff', 'cog', 'cog_diff', 'heading', 'rot', 'status_change', 'time_diff']].head())
 print(df.columns.tolist())
-
+# After computing time_per_status
+df = df.merge(time_per_status.reset_index(), on=['mmsi', 'status'], how='left', suffixes=('', '_total'))
+print(df[['mmsi', 'status', 'time_diff_total']].head())
 # Step 6: Save
 df.to_csv('data/processed/features_2025-06-01.csv', index=False)
 

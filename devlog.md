@@ -26,11 +26,20 @@
 | 12.07 | `(conn.close())` עם סוגריים | **Python – פונקציות בלי סוגריים מיותרים** |
 | 12.07 | `cur= IF NOT EXISTS { ... }` | **SQL = מחרוזת, לא בלוק קוד** |
 | 12.07 | `import sqlalchemy` + `datetime` | **מייבאים רק מה שמשתמשים** |
+| 13.07 | ניסיתי לחשב `sog_diff` מעמודה לא קיימת | **KeyError – להבין את מבנה הנתונים לפני חישוב** |
+| 13.07 | עצרתי – לא העתקתי | **עדיף לעצור מלהעתיק בלי להבין** |
+| 14.07 | שיניתי שמות עמודות ב-`save_by_coord.py` – לא עדכנתי בהמשך הקוד | **שינוי שמות = עדכון בכל מקום** – עקביות |
+| 14.07 | `skiprows=1` דילג על כותרת | **עדיף לטעון עם כותרת** – `df.columns = [...]` במקום לדלג |
 | 15.07 | `read_csv` עם `rows` במקום `nrows` | **פרמטר נכון = `nrows`** |
 | 15.07 | `rename` במקום `columns` | **שינוי שמות = `df.columns = [...]`** |
 | 15.07 | קוד קשיח מול קוד גנרי | **קוד גנרי – מזהה לפי תוכן, לא לפי מיקום** |
-| 16.07 | `time_diff` עם `groupby` | **צריך למיין לפי זמן ולקבץ לפי `mmsi`** |
+| 15.07 | שיניתי ארכיטקטורה – הוספתי שמות ב-`save_by_coord.py` | **החלטה ארכיטקטונית – שלי** – לא רק תיקון, תכנון |
+| 16.07 | `time_diff` בלי קיבוץ לפי `mmsi` | **צריך לקבץ לפי `mmsi`** – אחרת מערבבים ספינות שונות |
+| 16.07 | `diff()` בלי מיון לפי זמן | **צריך למיין לפי `base_date_time`** – אחרת ההפרשים לא כרונולוגיים |
 | 16.07 | `diff()` על מחרוזות | **צריך להמיר ל-`datetime` לפני `diff()`** |
+| 16.07 | בלבול בין Anchoring ל-Maneuvering | **Anchoring = SOG < 0.5, Maneuvering = SOG ≥ 0.5** |
+| 16.07 | Git commit – הוספתי תובנות | **מעכשיו: commit message = מה נבנה + מה הלקח** |
+| 19.07 | עדכון `devlog.md` – קובץ מסודר | **תיעוד = שליטה. לא לזכור – לתעד.** |
 
 ---
 
@@ -56,12 +65,33 @@
 | 12.07 | `(conn.close())` with parentheses | **Python – functions without extra parentheses** |
 | 12.07 | `cur= IF NOT EXISTS { ... }` | **SQL = string, not code block** |
 | 12.07 | `import sqlalchemy` + `datetime` | **Import only what you use** |
+| 13.07 | Tried to calculate `sog_diff` from non-existent column | **KeyError – understand data structure before calculating** |
+| 13.07 | Stopped – didn't copy | **Better to stop than to copy without understanding** |
+| 14.07 | Changed column names in `save_by_coord.py` – didn't update downstream | **Name change = update everywhere** – consistency |
+| 14.07 | `skiprows=1` skipped header | **Better to load with header** – `df.columns = [...]` instead of skipping |
 | 15.07 | `read_csv` with `rows` instead of `nrows` | **Correct parameter is `nrows`** |
 | 15.07 | `rename` instead of `columns` | **Renaming = `df.columns = [...]`** |
 | 15.07 | Hard-coded vs generic code | **Generic code – identify by content, not position** |
-| 16.07 | `time_diff` with `groupby` | **Must sort by time and group by `mmsi`** |
+| 15.07 | Changed architecture – added names in `save_by_coord.py` | **Architectural decision – mine** – not just a fix, a plan |
+| 16.07 | `time_diff` without grouping by `mmsi` | **Must group by `mmsi`** – otherwise mixing different vessels |
+| 16.07 | `diff()` without sorting by time | **Must sort by `base_date_time`** – otherwise intervals aren't chronological |
 | 16.07 | `diff()` on strings | **Convert to `datetime` before `diff()`** |
+| 16.07 | Confused Anchoring vs Maneuvering | **Anchoring = SOG < 0.5, Maneuvering = SOG ≥ 0.5** |
+| 16.07 | Git commit – added insights | **From now on: commit message = what was built + lesson learned** |
+| 19.07 | Updated `devlog.md` – organized file | **Documentation = control. Don't remember – document.** |
 
+### 19.07 – Understanding Anchoring Time Calculation
+
+**How it works:**
+1. `loc` – marks rows with SOG < 0.5 as 'anchoring'
+2. `shift(1)` – compares each row to the previous one to detect status changes
+3. `groupby('mmsi')` – calculates time differences within each vessel (not across vessels)
+4. `sum()` – aggregates total time per vessel per status
+
+**Key insight:**
+- Anchoring = vessel is almost stationary (SOG < 0.5 knots)
+- Maneuvering = vessel is moving (SOG ≥ 0.5 knots)
+- Status change = transition point between the two states
 ---
 
 ### 🧠 Core Insights
@@ -73,11 +103,18 @@
 | **API** | Key + Bounding Box + WebSocket |
 | **Data Processing** | Filter before merging – much faster |
 | **PostgreSQL** | Docker + `host=localhost` + matching credentials |
-| **Git** | Always use `git` prefix |
+| **Git** | Always use `git` prefix; **commit message = what was built + lesson learned** |
 | **SQL** | `information_schema.tables` – with dot; `SERIAL` – not `SEARIAL` |
 | **Python** | 3 quotes for multi-line; minimal imports; no extra parentheses |
 | **Generic Code** | Identify columns by content, not position |
-| **Time Calculation** | Sort by time, group by vessel, convert to datetime first |
+| **Consistency** | Change names = update everywhere |
+| **Architecture** | Make decisions. Don't just fix. Plan. |
+| **Grouping** | Group by `mmsi` before time calculations – avoid mixing vessels |
+| **Sorting** | Sort by `base_date_time` before `diff()` – intervals must be chronological |
+| **Type Conversion** | Convert to `datetime` before `diff()` – strings can't be subtracted |
+| **Anchoring vs Maneuvering** | Anchoring = SOG < 0.5, Maneuvering = SOG ≥ 0.5 |
+| **Learning Strategy** | Stop instead of copying; understand, then build |
+| **Documentation** | Don't remember – document |
 
 ---
 
@@ -89,11 +126,15 @@
 | Data Acquisition (Live + History) | ✅ | 100% |
 | AIS + Weather Merge | ✅ | 100% |
 | PostgreSQL Setup | ✅ | 100% |
-| Feature Engineering (SOG/COG/ROT) | ✅ | 80% |
-| Feature Engineering (Belcore) | 🔄 | 30% |
+| Feature Engineering (SOG/COG/ROT) | ✅ | 100% |
+| Feature Engineering (Belcore – Anchoring) | 🔄 | 60% |
+| Feature Engineering (Belcore – Dwell, CI, CCI) | 🔲 | 0% |
+| Feature Engineering (Zhou) | 🔲 | 0% |
+| Normalization + Sequences | 🔲 | 0% |
 | LSTM Autoencoder | 🔲 | 0% |
-| Anomaly Detection | 🔲 | 0% |
-| Production (API + Dashboard) | 🔲 | 0% |
+| Rotterdam Evaluation | 🔲 | 0% |
+| Anomaly Detection (4 types) | 🔲 | 0% |
+| Production (FastAPI + Streamlit + Docker) | 🔲 | 0% |
 
 ---
 
@@ -113,4 +154,4 @@
 
 ---
 
-*Last updated: 16.07.2026*
+*Last updated: 19.07.2026*
