@@ -43,15 +43,32 @@
 | 19.07 | עדכון `devlog.md` – קובץ מסודר | **תיעוד = שליטה. לא לזכור – לתעד.** |
 | 20.07 | `dwell_time` – לא הבנתי למה Anchoring ≈ Dwell | **Anchoring = SOG<0.5 (כללי), Dwell = SOG<0.5 + ברציף (ספציפי)** |
 | 20.07 | `dwell_time` – קודם `status_dwell` ואז `merge` | **צריך לחשב `time_diff` על `status_dwell` כמו על `status`** |
+| 21.07 | `hour` – השתמשתי לפני שיצרתי | **סדר פעולות: צור `df['hour']` לפני `groupby`** |
+| 21.07 | `occupied` – ספרתי שורות במקום מיקומים | **`nunique()` על קואורדינטות, לא `size()` על שורות** |
+| 21.07 | CI/CCI – לא הבנתי את ההבדל | **CI = רגעי, CCI = מצטבר** |
 
 ---
 
-### 📝 English Version
+### 🔬 21.07 – Understanding CI and CCI
 
-| Date | Mistake | Lesson Learned |
-|------|---------|----------------|
-| 20.07 | `dwell_time` – didn't understand why Anchoring ≈ Dwell | **Anchoring = SOG<0.5 (general), Dwell = SOG<0.5 + at berth (specific)** |
-| 20.07 | `dwell_time` – first `status_dwell` then `merge` | **Need to compute `time_diff` on `status_dwell` the same way as on `status`** |
+| Metric | Definition | How to calculate |
+|--------|------------|------------------|
+| **CI (Congestion Index)** | Instant congestion – ratio of occupied berths to total berths at a given hour | `occupied / total_berths` |
+| **CCI (Cumulative Congestion Index)** | Accumulated congestion over time – shows trend | `ci.cumsum()` |
+
+**Key insights:**
+- `occupied` = number of **unique locations** (lat_rounded, lon_rounded) where `status_dwell == 'dwell'`
+- `total_berths` = `df['is_berth'].sum()` – total unique berth locations identified
+- CI is **momentary**, CCI is **cumulative** – they serve different purposes
+- CI tells you "how congested right now?" – CCI tells you "is congestion getting worse?"
+
+**Formulas:**
+occupied = df[df['status_dwell'] == 'dwell'].groupby('hour')[['lat_rounded', 'lon_rounded']].nunique().sum(axis=1)
+total_berths = df['is_berth'].sum()
+CI = occupied / total_berths
+CCI = ci.cumsum()
+
+text
 
 ---
 
@@ -62,13 +79,7 @@
 | **Anchoring** | Vessel is almost stationary (SOG < 0.5 knots) | Based on SOG only |
 | **Dwell** | Vessel is at berth (SOG < 0.5 AND is_berth = True) | Based on SOG + location |
 
-**Key insight:**
-- Anchoring and Dwell are **not** mutually exclusive.
-- A vessel can be both Anchoring and Dwell at the same time.
-- The difference: Anchoring includes **all** stationary time, Dwell only stationary time **at berth**.
-
-
-### 🔬 20.07 – Anchoring vs Dwell: How to Interpret
+**How to interpret:**
 
 | Condition | Meaning |
 |-----------|---------|
@@ -92,7 +103,8 @@
 | Feature Engineering (Belcore – Anchoring Time) | ✅ | 100% |
 | Feature Engineering (Belcore – Maneuvering Time) | ✅ | 100% |
 | Feature Engineering (Belcore – Dwell Time) | ✅ | 100% |
-| Feature Engineering (Belcore – CI, CCI) | 🔲 | 0% |
+| Feature Engineering (Belcore – CI) | ✅ | 100% |
+| Feature Engineering (Belcore – CCI) | ✅ | 100% |
 | Feature Engineering (Zhou) | 🔲 | 0% |
 | Normalization + Sequences | 🔲 | 0% |
 | LSTM Autoencoder | 🔲 | 0% |
@@ -102,21 +114,16 @@
 
 ---
 
-### 📝 Additional Notes – Belcore Features (20.07)
+### 📝 Belcore Features – Status
 
-**Features implemented:**
-- `anchoring_time` – time with SOG < 0.5 knots ✅ (19.07)
-- `maneuvering_time` – time with SOG ≥ 0.5 knots ✅ (19.07)
-- `dwell_time` – time at berth (SOG < 0.5 AND is_berth) ✅ (20.07)
-- `ci` – Congestion Index 🔲
-- `cci` – Cumulative Congestion Index 🔲
-
-**Reference values from Belcore (2026):**
-- Anchoring (LA): 8–77 hours
-- Anchoring (LB): 14–77 hours
-- Maneuvering: 1–6 hours
-- Dwell: 50–89% of total port time
+| Feature | Status | Date |
+|---------|--------|------|
+| `anchoring_time` | ✅ | 19.07 |
+| `maneuvering_time` | ✅ | 19.07 |
+| `dwell_time` | ✅ | 20.07 |
+| `ci` (Congestion Index) | ✅ | 21.07 |
+| `cci` (Cumulative Congestion Index) | ✅ | 21.07 |
 
 ---
 
-*Last updated: 20.07.2026*
+*Last updated: 21.07.2026*
