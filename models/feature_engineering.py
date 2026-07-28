@@ -76,6 +76,44 @@ df = df.merge(time_per_dwell.reset_index(), on=['mmsi', 'status_dwell'], how='le
 # חילוץ dwell_time
 df['dwell_time'] = df['time_diff_dwell_total'].where(df['status_dwell'] == 'dwell', 0)
 
+# 1. Creating hour column
+df['hour'] = df['base_date_time'].dt.hour
+# 2. occupied berths per hour (unique rounded coordinates)
+occupied = df[df['status_dwell'] == 'dwell'].groupby('hour')[['lat_rounded', 'lon_rounded']].nunique().sum(axis=1)
+# 3. total berths identified in the dataset (or set a realistic number)
+total_berths = df['is_berth'].sum()  # count of unique berth locations
+# OR: total_berths = 30  # if you prefer a constant
+
+# 4. CI
+ci = occupied / total_berths
+
+# 5. CCI
+cci = ci.cumsum()
+
+print("Occupied berths per hour:", occupied)
+print("CI per hour:", ci)
+print("CCI (cumulative):", cci)
+
+
+#course_alteration = lateral_distance[df['cog']>0.4]
+#course_alteration = lateral_distance[df['sog']>0.1]
+
+# Make sure that there is hour column
+#df['hour'] = df['base_date_time'].dt.hour
+
+# Sort by hour and ship
+df= df.sort_values(['hour', 'mmsi'])
+
+# See how it looks one hour
+one_hour = df[df['hour'] == 23]
+
+print(f"Rows in hour 23: {len(one_hour)}")
+print(f"Unique MMSI in hour 23: {one_hour['mmsi'].nunique()}")
+print(one_hour[['mmsi', 'latitude', 'longitude']].head(10))
+first_10_ships = one_hour.groupby('mmsi').first().head(10)
+print(first_10_ships[['latitude', 'longitude']])
+
+
 print(df[['mmsi', 'status', 'time_diff_total']].head())
 print(df[['mmsi', 'status', 'anchoring_time', 'maneuvering_time']].head())
 print(df[['mmsi','status_dwell','dwell_time', 'anchoring_time']].head())
