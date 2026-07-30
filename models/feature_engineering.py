@@ -1,5 +1,5 @@
 import pandas as pd
-
+from itertools import combinations
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
 
@@ -104,14 +104,12 @@ print("CCI (cumulative):", cci)
 # Sort by hour and ship
 df= df.sort_values(['hour', 'mmsi'])
 
-# See how it looks one hour
-one_hour = df[df['hour'] == 23]
+one_hour = df[df['hour']==23]
+mmsi_list = one_hour['mmsi'].unique()
+print(f"Total MMSI in hour 23: {len(mmsi_list)} ")
 
-print(f"Rows in hour 23: {len(one_hour)}")
-print(f"Unique MMSI in hour 23: {one_hour['mmsi'].nunique()}")
-print(one_hour[['mmsi', 'latitude', 'longitude']].head(10))
-first_10_ships = one_hour.groupby('mmsi').first().head(10)
-print(first_10_ships[['latitude', 'longitude']])
+
+
 
 
 print(df[['mmsi', 'status', 'time_diff_total']].head())
