@@ -108,6 +108,22 @@ one_hour = df[df['hour']==23]
 mmsi_list = one_hour['mmsi'].unique()
 print(f"Total MMSI in hour 23: {len(mmsi_list)} ")
 
+encounter_count = 0
+
+for mmsi1, mmsi2 in combinations(mmsi_list, 2):
+    ship1 = one_hour[one_hour['mmsi']==mmsi1].iloc[0]
+    ship2 = one_hour[one_hour['mmsi']==mmsi2].iloc[0]
+
+    lat1, lon1 = ship1['latitude'], ship1['longitude']
+    lat2, lon2 = ship2['latitude'], ship2['longitude']
+
+    dist_deg = ((lat1-lat2)**2 + (lon1-lon2)**2)**0.5
+    dist_km = dist_deg*111
+
+    if dist_km < 2:
+        encounter_count+=1
+
+print(f"Number of encounters in hour 23: {encounter_count}")        
 
 
 
