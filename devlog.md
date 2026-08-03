@@ -47,6 +47,18 @@
 | 21.07 | `occupied` – ספרתי שורות במקום מיקומים | **`nunique()` על קואורדינטות, לא `size()` על שורות** |
 | 21.07 | CI/CCI – לא הבנתי את ההבדל | **CI = רגעי, CCI = מצטבר** |
 
+### 🔬 02.08 – Optimization with scipy.spatial.distance.pdist
+
+| תאריך | טעות | תובנה / לקח |
+|-------|------|--------------|
+| 02.08 | לולאה כפולה על 481 ספינות (115,440 זוגות) | **חישוב וקטורי** – `pdist` מחשב הכל ב-C, מהיר פי 100 |
+| 02.08 | ניסיתי לחשב מרחקים בזמן אמת | **לחשב מרחקים בבת אחת** – `coords = df[['lat','lon']].values` |
+
+**Key insight:** 
+- 481 ships = 115,440 pairs
+- Loop: ~10-30 seconds
+- `pdist`: < 0.1 seconds
+- **Always prefer vectorized operations!**
 ---
 
 ### 🔬 21.07 – Understanding CI and CCI
@@ -123,7 +135,20 @@ text
 | `dwell_time` | ✅ | 20.07 |
 | `ci` (Congestion Index) | ✅ | 21.07 |
 | `cci` (Cumulative Congestion Index) | ✅ | 21.07 |
+### 📊 Belcore Features – Removed (30.07)
 
+| Feature | Status | Note |
+|---------|--------|------|
+| `anchoring_time` | ❌ | Removed – not relevant for VTS |
+| `maneuvering_time` | ❌ | Removed – not relevant for VTS |
+| `dwell_time` | ❌ | Removed – not relevant for VTS |
+| `ci` (Congestion Index) | ❌ | Removed – not relevant for VTS |
+| `cci` (Cumulative C.I.) | ❌ | Removed – not relevant for VTS |
+| **Belcore** | ❌ | **Removed from product** – kept in backup |
+
+**Decision:** Belcore is port/berth analysis, not VTS safety.
+**Backup location:** `models/feature_engineering_backup.py`
+**Commit:** `f0cf038`
 ---
 
 *Last updated: 21.07.2026*
