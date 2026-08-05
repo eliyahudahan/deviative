@@ -47,6 +47,8 @@
 | 21.07 | `occupied` – ספרתי שורות במקום מיקומים | **`nunique()` על קואורדינטות, לא `size()` על שורות** |
 | 21.07 | CI/CCI – לא הבנתי את ההבדל | **CI = רגעי, CCI = מצטבר** |
 
+---
+
 ### 🔬 02.08 – Optimization with scipy.spatial.distance.pdist
 
 | תאריך | טעות | תובנה / לקח |
@@ -59,6 +61,25 @@
 - Loop: ~10-30 seconds
 - `pdist`: < 0.1 seconds
 - **Always prefer vectorized operations!**
+
+---
+
+### 🔬 05.08 – Encounter Detection – From Hours to Minutes
+
+| תאריך | טעות | תובנה / לקח |
+|-------|------|--------------|
+| 05.08 | חישבתי Encounter על שעה שלמה (10,212 שורות) | **שעה = יותר מדי דגימות** – 481 ספינות מופיעות 21 פעמים כל אחת |
+| 05.08 | קיבלתי 4.4M מפגשים על 52M זוגות | **צריך לקבץ לפי דקות** – כל דקה = 100-200 ספינות, ללא כפילויות |
+| 05.08 | `results.append()` היה מחוץ ללולאה | **הזחה קובעת** – append בתוך הלולאה = 1440 דקות, מחוץ = דקה אחת |
+| 05.08 | חשבתי ש-pdist על 10,212 שורות זה בסדר | **pdist מחשב n*(n-1)/2** – 10,212 → 52M זוגות (יותר מדי) |
+| 05.08 | לא הבנתי את הקשר בין `df['minute']` ל-`groupby('minute')` | **groupby משתמש בעמודה** – `df['minute']` היא העמודה, `groupby` מקבץ לפיה |
+
+**Key insights:**
+- **שעה שלמה:** 10,212 שורות, 52M זוגות, 4.4M מפגשים (לא הגיוני)
+- **דקה אחת:** 100-200 שורות, 10-20K זוגות, 1-2K מפגשים (הגיוני)
+- **הפתרון:** קיבוץ לפי `minute` במקום `hour`
+- **תוצאה:** 1440 דקות, ממוצע 138.8 ספינות לדקה, 940.7 מפגשים לדקה
+
 ---
 
 ### 🔬 21.07 – Understanding CI and CCI
@@ -103,7 +124,7 @@ text
 
 ---
 
-### 📊 Progress Summary
+### 📊 Progress Summary (מעודכן – 05.08.2026)
 
 | Phase | Status | Completion |
 |-------|--------|------------|
@@ -112,30 +133,18 @@ text
 | AIS + Weather Merge | ✅ | 100% |
 | PostgreSQL Setup | ✅ | 100% |
 | Feature Engineering (SOG/COG/ROT) | ✅ | 100% |
-| Feature Engineering (Belcore – Anchoring Time) | ✅ | 100% |
-| Feature Engineering (Belcore – Maneuvering Time) | ✅ | 100% |
-| Feature Engineering (Belcore – Dwell Time) | ✅ | 100% |
-| Feature Engineering (Belcore – CI) | ✅ | 100% |
-| Feature Engineering (Belcore – CCI) | ✅ | 100% |
-| Feature Engineering (Zhou) | 🔲 | 0% |
+| Feature Engineering (Zhou – Encounter Detection) | ✅ | 100% |
+| Feature Engineering (Zhou – Course Alteration) | 🔲 | 0% |
+| Feature Engineering (Zhou – Speed Change) | 🔲 | 0% |
+| Weather Context (Filter) | 🔲 | 0% |
+| Dark Vessel Detection | 🔲 | 0% |
 | Normalization + Sequences | 🔲 | 0% |
 | LSTM Autoencoder | 🔲 | 0% |
-| Rotterdam Evaluation | 🔲 | 0% |
-| Anomaly Detection (4 types) | 🔲 | 0% |
 | Production (FastAPI + Streamlit + Docker) | 🔲 | 0% |
 
 ---
 
-### 📝 Belcore Features – Status
-
-| Feature | Status | Date |
-|---------|--------|------|
-| `anchoring_time` | ✅ | 19.07 |
-| `maneuvering_time` | ✅ | 19.07 |
-| `dwell_time` | ✅ | 20.07 |
-| `ci` (Congestion Index) | ✅ | 21.07 |
-| `cci` (Cumulative Congestion Index) | ✅ | 21.07 |
-### 📊 Belcore Features – Removed (30.07)
+### 📝 Belcore Features – Removed (30.07)
 
 | Feature | Status | Note |
 |---------|--------|------|
@@ -149,6 +158,19 @@ text
 **Decision:** Belcore is port/berth analysis, not VTS safety.
 **Backup location:** `models/feature_engineering_backup.py`
 **Commit:** `f0cf038`
+
 ---
 
-*Last updated: 21.07.2026*
+### 📊 Encounter Detection – תוצאות סופיות (05.08)
+Total minutes: 1440
+Average ships per minute: 138.8
+Average encounters per minute: 940.7
+Max ships in a minute: 219 (23:00)
+Max encounters in a minute: 2,018 (23:00)
+Average pairs per minute: 9,785.6
+
+text
+
+---
+
+*Last updated: 05.08.2026*
