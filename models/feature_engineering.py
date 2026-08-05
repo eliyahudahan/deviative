@@ -2,10 +2,11 @@ import pandas as pd
 #from itertools import combinations
 from scipy.spatial.distance import pdist
 import numpy as np
+
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
 
-#Reading data
+# 1. Reading data
 df = pd.read_csv("data/processed/la_ais_weather_2025-06-01.csv")
 
 print("Columns:", df.columns.tolist())
@@ -14,55 +15,75 @@ print(df.iloc[0].to_dict())
 
     
 
-# Basic Feature Engineering
+# 2. Basic Feature Engineering
 df['sog_diff'] = df['sog'] - df['sog'].shift(1)
 df['cog_diff'] = df['cog'] - df['cog'].shift(1)
 df['rot'] = df['heading'] - df['heading'].shift(1)
 
-#Convert base date time for computing
+# 3. Convert base date time for computing
 df['base_date_time'] = pd.to_datetime(df['base_date_time'])
 
 # Step 1: Status
 df.sort_values('base_date_time', inplace=True)
 
-#  Creating hour column
 df['hour'] = df['base_date_time'].dt.hour
+#  Creating one minute
+
+df['minute'] = df['base_date_time'].dt.floor('min')
+one_minute_sample = df[df['minute']=='2025-06-01 23:00:00'] 
 
 print("/n=== Feature Engineering completed ===")
 print(f"/n Total records: {len(df)}")
 print(f"Features: {df.columns.tolist()}")
 
-#2. Encounter Detection (Zhou) - Just for example
-one_hour = df[df['hour']==23]
-#mmsi_list = one_hour['mmsi'].unique()
-#print(f"Total MMSI in hour 23: {len(mmsi_list)} ")
-print(f"/nTotal MMSI in hour 23: {len(one_hour['mmsi'].unique())}")
-#encounter_count = 0
+# 4. Encounter Detection (Zhou) - Just for example
+sample_minute = df[df['minute']=='2025-06-01 23:00:00']
+print(f"\nSample minute shape: {sample_minute.shape}")
+print(f"Unique MMSI in sample {sample_minute['mmsi'].unique()}")
 
-"""for mmsi1, mmsi2 in combinations(mmsi_list, 2):
-    ship1 = one_hour[one_hour['mmsi']==mmsi1].iloc[0]
-    ship2 = one_hour[one_hour['mmsi']==mmsi2].iloc[0]
 
-    lat1, lon1 = ship1['latitude'], ship1['longitude']
-    lat2, lon2 = ship2['latitude'], ship2['longitude']
-    #Haversine formula
-    dist_deg = ((lat1-lat2)**2 + (lon1-lon2)**2)**0.5
-    dist_km = dist_deg*111
+# Running loop about all minutes
+results = []
+for minute, group in df.groupby('minute'):
+    if len(group)<2:
+        continue
+# 5. Fast calculating using by pdist
+    coords = group[['latitude', 'longitude']].values
+    distances = pdist(coords, metric='euclidean') * 111
+    encounters = np.sum(distances<2)
 
-    if dist_km < 2:
-        encounter_count+=1
+    results.append({
+        'minute':minute,
+        'ships': len(group),
+        'encoutnres': encounters,
+        'pair': len(distances)
+    })
 
-print(f"Number of encounters in hour 23: {encounter_count}")        
-"""
-#Fast calculating using by scipy
-coords = one_hour[['latitude', 'longitude']].values
-distance_deg = pdist(coords, metric='euclidean')
-distance_km = distance_deg * 111
+results_df = pd.DataFrame(results)
+print(results_df.head())
 
-encounter_count = np.sum(distance_km<2)
-print(f"Noumbers of encounters in 23: {encounter_count}")
+# אחרי שיצרת את results_df:
+results_df = results_df.sort_values('minute')
+print(results_df.head())  # עכשיו יראה מ-00:00
+df = df.sort_values('base_date_time')
+# אחרי שיצרת את results_df:
+print(f"Total minutes in results: {len(results_df)}")
+print(f"First minute: {results_df['minute'].iloc[0]}")
+print(f"Last minute: {results_df['minute'].iloc[-1]}")
+print(f"All minutes:\n{results_df['minute'].head(10)}")
+# כל הדקות
+print(results_df)
 
+# 10 הראשונות
+print(results_df.head(10))
+
+# 10 האחרונות
+print(results_df.tail(10))
+
+# סטטיסטיקה
+print(results_df.describe())
 
 # Step 3: Save
 df.to_csv('data/processed/features_2025-06-01.csv', index=False)
 print("\n✅ Features saved to data/processed/features_2025-06-01.csv")
+
