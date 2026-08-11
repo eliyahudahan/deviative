@@ -15,10 +15,10 @@ print(df.iloc[0].to_dict())
 
     
 
-# 2. Basic Feature Engineering
-df['sog_diff'] = df['sog'] - df['sog'].shift(1)
-df['cog_diff'] = df['cog'] - df['cog'].shift(1)
-df['rot'] = df['heading'] - df['heading'].shift(1)
+# 2. Basic Feature Engineering – תיקון עם groupby
+df['sog_diff'] = df.groupby('mmsi')['sog'].diff()
+df['cog_diff'] = df.groupby('mmsi')['cog'].diff()
+df['rot'] = df.groupby('mmsi')['heading'].diff()
 
 # 3. Convert base date time for computing
 df['base_date_time'] = pd.to_datetime(df['base_date_time'])
