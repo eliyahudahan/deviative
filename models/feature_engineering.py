@@ -1,139 +1,65 @@
-# ============================================================
-# FEATURE ENGINEERING + ENCOUNTER DETECTION (Zhou et al., 2023)
-# For VTS – Vessel Traffic Services
-# Deviative Project – AIS + Weather + Anomaly Detection
-# ============================================================
-
-# pandas = DataFrame library – turns CSV into tables with rows & columns
 import pandas as pd
-
-# pdist = Pairwise Distance – calculates all distances between all ships at once
-# Much faster than double loop (C code, not Python)
-from scipy.spatial.distance import pdist
-
-# NumPy = array math – necessary for pdist and vectorized operations
 import numpy as np
 
-# Show all columns and full width when printing
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', None)
+# ======================
+# 1. טעינת נתונים
+# ======================
+features = pd.read_csv('data/processed/features_2025-06-01.csv')
+print("Columns:", features.columns.tolist())
+print(features.head())
 
-# ============================================================
-# 1. LOAD DATA
-# ============================================================
-# Read the merged AIS + Weather CSV file
-df = pd.read_csv("data/processed/la_ais_weather_2025-06-01.csv")
+# ======================
+# 2. חישוב cog_diff מתוקן (Wrap-around)
+# ======================
+features = features.sort_values(['mmsi', 'base_date_time'])
+features['cog_diff'] = features.groupby('mmsi')['cog'].diff()
+features['cog_diff'] = (features['cog_diff'] + 180) % 360 - 180
 
-# Print column names to see what features we have
-print("Columns:", df.columns.tolist())
+print(features[['mmsi', 'cog', 'cog_diff']].head(10))
 
-# Print first row as a dictionary – easier to read than a table
-print("\nFirst row:")
-print(df.iloc[0].to_dict())
+# ======================
+# 3. חישוב sog_diff (אם צריך)
+# ======================
+# features['sog_diff'] כבר קיים בנתונים
+# אם צריך לחשב מחדש:
+# features['sog_diff'] = features.groupby('mmsi')['sog'].diff()
 
-# ============================================================
-# 2. BASIC FEATURE ENGINEERING – WITH groupby
-# ============================================================
-# Without groupby: diff() would compare rows across DIFFERENT ships → wrong!
-# With groupby('mmsi'): each ship is treated separately
+# ======================
+# 4. סטטיסטיקות תיאוריות
+# ======================
+print("\n=== התפלגות מהירות רוח ===")
+print(features['wind_speed_10m'].describe())
 
-# sog_diff = Speed Over Ground difference between consecutive readings per ship
-df['sog_diff'] = df.groupby('mmsi')['sog'].diff()
+print("\n=== cog_diff לפי טווחי רוח ===")
+print(features.groupby(pd.cut(features['wind_speed_10m'], bins=[0, 5, 10, 15, 20]))['cog_diff'].agg(['mean', 'std', 'count']))
 
-# cog_diff = Course Over Ground difference (direction change) per ship
-df['cog_diff'] = df.groupby('mmsi')['cog'].diff()
+# ======================
+# 5. ספים אמפיריים (מהנתונים עצמם)
+# ======================
+COG_THRESHOLD = features['cog_diff'].quantile(0.95)
+SOG_THRESHOLD = features['sog_diff'].abs().quantile(0.95)
 
-# rot = Rate of Turn – heading change per ship
-# Heading = where the bow points; diff = how fast the ship is turning
-df['rot'] = df.groupby('mmsi')['heading'].diff()
+print("\n=== ספים אמפיריים ===")
+print(f"cog_diff 95th percentile: {COG_THRESHOLD:.2f}°")
+print(f"sog_diff 95th percentile: {SOG_THRESHOLD:.2f} knots")
+print(f"wind_speed_10m max: {features['wind_speed_10m'].max():.2f} km/h (no extreme wind)")
 
-# ============================================================
-# 3. TIME HANDLING
-# ============================================================
-# Convert timestamp string to datetime object
-df['base_date_time'] = pd.to_datetime(df['base_date_time'])
+# ======================
+# 6. סינון לפי הספים החדשים (ללא רוח)
+# ======================
+filtered_features = features[
+    (features['cog_diff'].abs() > COG_THRESHOLD) |
+    (features['sog_diff'].abs() > SOG_THRESHOLD)
+]
 
-# Sort chronologically – needed before any time-based calculations
-df.sort_values('base_date_time', inplace=True)
+print(f"\n=== תוצאות סינון ===")
+print(f"סה\"כ שורות: {len(features):,}")
+print(f"שורות עם cog_diff > {COG_THRESHOLD:.2f}°: {len(features[features['cog_diff'].abs() > COG_THRESHOLD]):,}")
+print(f"שורות עם sog_diff > {SOG_THRESHOLD:.2f} knots: {len(features[features['sog_diff'].abs() > SOG_THRESHOLD]):,}")
+print(f"סה\"כ שורות מסוננות (OR): {len(filtered_features):,}")
 
-# Extract hour (0–23) and minute (rounded down)
-df['hour'] = df['base_date_time'].dt.hour
-df['minute'] = df['base_date_time'].dt.floor('min')
-
-# ============================================================
-# 4. ENCOUNTER DETECTION – Minute-level (Zhou et al., 2023)
-# ============================================================
-# Why minutes, not hours?
-# One hour = many duplicate readings per ship (10,212 rows, only 481 unique MMSI)
-# One minute = each ship appears once → no duplicates → correct distance calculation
-
-# Loop over each minute group
-results = []
-
-for minute, group in df.groupby('minute'):
-    # Need at least 2 ships to have an encounter
-    if len(group) < 2:
-        continue
-    
-    # Extract coordinates as a NumPy array
-    # Shape: (n_ships, 2) – each row = [latitude, longitude]
-    coords = group[['latitude', 'longitude']].values
-    
-    # pdist calculates all pairwise Euclidean distances in one go
-    # Returns distances in degrees
-    distances_deg = pdist(coords, metric='euclidean')
-    
-    # Convert degrees to kilometers (1 degree ≈ 111 km)
-    distances_km = distances_deg * 111
-    
-    # Count how many pairs are less than 2 km apart
-    # distances_km < 2 returns a boolean array (True/False)
-    # np.sum() counts the True values (True = 1, False = 0)
-    encounters = np.sum(distances_km < 2)
-    
-    # Save results for this minute
-    results.append({
-        'minute': minute,
-        'ships': len(group),
-        'encounters': encounters,
-        'pairs': len(distances_km)
-    })
-
-# Convert list of dictionaries to a clean DataFrame
-results_df = pd.DataFrame(results)
-
-# Sort by minute to see chronological order (00:00 → 23:59)
-results_df = results_df.sort_values('minute')
-
-# ============================================================
-# 5. OUTPUT – DIAGNOSTICS & STATISTICS
-# ============================================================
-print("\n" + "="*60)
-print("ENCOUNTER DETECTION RESULTS")
-print("="*60)
-
-print("\n📊 First 5 minutes:")
-print(results_df.head())
-
-print(f"\n📊 Total minutes analyzed: {len(results_df)}")
-print(f"📊 First minute: {results_df['minute'].iloc[0]}")
-print(f"📊 Last minute: {results_df['minute'].iloc[-1]}")
-
-print("\n📊 First 10 minutes:")
-print(results_df.head(10))
-
-print("\n📊 Last 10 minutes:")
-print(results_df.tail(10))
-
-print("\n📊 Summary Statistics (describe):")
-print(results_df.describe())
-
-# ============================================================
-# 6. SAVE PROCESSED DATA
-# ============================================================
-# Save the enriched DataFrame with all new features
-# index=False = don't save row numbers
-df.to_csv('data/processed/features_2025-06-01.csv', index=False)
-
-print("\n✅ Features saved to data/processed/features_2025-06-01.csv")
-print("="*60)
+# ======================
+# 7. שמירת התוצאות (אופציונלי)
+# ======================
+# filtered_features.to_csv('data/processed/anomalies_detected.csv', index=False)
+# print("\nנשמרו anomalies_detected.csv")
