@@ -15,6 +15,21 @@ features = features.sort_values(['mmsi', 'base_date_time'])
 features['cog_diff'] = features.groupby('mmsi')['cog'].diff()
 features['cog_diff'] = (features['cog_diff'] + 180) % 360 - 180
 
+# ======================
+# 3.5 חישוב sog_diff_percent תקין
+# ======================
+features['sog_diff_percent'] = features['sog_diff'] / features['sog'].where(features['sog'] != 0)
+features['sog_diff_percent'] = features['sog_diff_percent'].replace([float('inf'), float('-inf')], None)
+features['sog_diff_percent'] = features['sog_diff_percent'].clip(lower=-10, upper=10)
+
+
+
+print("\n=== sog_diff_percent אחרי תיקון ===")
+print(features['sog_diff_percent'].describe())
+print("\n=== sog_diff_percent אחרי clip ===")
+print(features['sog_diff_percent'].describe())
+
+
 print(features[['mmsi', 'cog', 'cog_diff']].head(10))
 
 # ======================
@@ -42,7 +57,7 @@ SOG_THRESHOLD = features['sog_diff'].abs().quantile(0.95)
 print("\n=== ספים אמפיריים ===")
 print(f"cog_diff 95th percentile: {COG_THRESHOLD:.2f}°")
 print(f"sog_diff 95th percentile: {SOG_THRESHOLD:.2f} knots")
-print(f"wind_speed_10m max: {features['wind_speed_10m'].max():.2f} km/h (no extreme wind)")
+print(f"wind_speed_10m max: {features['wind_speed_10m'].max():.2f} km/h")
 
 # ======================
 # 6. סינון לפי הספים החדשים (ללא רוח)
@@ -63,3 +78,15 @@ print(f"סה\"כ שורות מסוננות (OR): {len(filtered_features):,}")
 # ======================
 # filtered_features.to_csv('data/processed/anomalies_detected.csv', index=False)
 # print("\nנשמרו anomalies_detected.csv")
+
+print(features.columns)
+
+print(f"\n {features['vessel_type'].value_counts()}")
+
+print(f"\n {features['length'].describe()}")
+
+print(f"\n {features['draft'].describe()}")
+
+print("sog == 0:", (features['sog'] == 0).sum())
+print("sog_diff isna:", features['sog_diff'].isna().sum())
+

@@ -11,7 +11,7 @@ Detects dangerous encounters, course alterations, speed changes, and dark vessel
 
 ## Data
 - **AIS**: MarineCadastre (San Pedro Bay, 2025-06-01, 200K+ records)
-- **Weather**: Open-Meteo (wind_speed_10m max 13.9 km/h – no extreme conditions)
+- **Weather**: Open-Meteo archive API (wind_speed_10m in km/h – verified via `hourly_units`)
 
 ## Empirical Thresholds (derived from data)
 | Metric | Threshold | Method |
@@ -19,7 +19,7 @@ Detects dangerous encounters, course alterations, speed changes, and dark vessel
 | Course Alteration | 86° | 95th percentile of cog_diff |
 | Speed Change | 10.2 knots | 95th percentile of sog_diff (absolute) |
 | Encounter Distance | < 2 km | Zhou et al. |
-| Wind Speed | N/A | No extreme wind in dataset (max 13.9 km/h) |
+| Wind Speed | N/A | Max 13.9 km/h – no extreme wind conditions in dataset |
 
 ## Tech Stack
 - **Python** – pandas, numpy, scipy
