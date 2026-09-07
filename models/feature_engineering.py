@@ -53,6 +53,12 @@ def calc_distances_for_minute(df_minute):
 features = pd.read_csv('data/processed/features_2025-06-01.csv')
 
 # ==========================================
+# 4.1 Data Quality Check – Duplicate Rows
+# ==========================================
+duplicates = features.groupby(['mmsi', 'base_date_time']).size()
+print(duplicates[duplicates > 1])
+print(f"{duplicates.sum()}")
+# ==========================================
 # 5. Sort, compute features, and convert to radians
 # ==========================================
 features = features.sort_values(['mmsi', 'base_date_time'])
