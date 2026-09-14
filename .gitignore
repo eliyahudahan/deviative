@@ -1,10 +1,13 @@
-
-# Environment variables (קריטי!)
+# ==========================================
+# Environment variables
+# ==========================================
 .env
 .env.local
 .env.*.local
 
+# ==========================================
 # Python
+# ==========================================
 __pycache__/
 *.py[cod]
 *.so
@@ -17,33 +20,50 @@ myenv/
 dist/
 build/
 
-# Data files (חשוב!)
-*.csv
+# ==========================================
+# Data files
+# ==========================================
 *.pkl
 *.h5
 *.parquet
 *.db
 *.sqlite3
 *.zip
-data/
 raw_data/
 *.log
 
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
+# Block all CSVs inside data/processed
+data/processed/*.csv
 
+# But allow the encounter results
+!data/processed/encounter_results.csv
+
+
+# Ignore raw AIS data (very large)
+data/ais/
+
+# ==========================================
+# Jupyter
+# ==========================================
+.ipynb_checkpoints/
+
+# ==========================================
 # IDE
+# ==========================================
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# ==========================================
 # OS
+# ==========================================
 .DS_Store
 Thumbs.db
 
+# ==========================================
 # Docker
+# ==========================================
 *.pid
 *.seed
-*.pid.lock
+*.pid.lockdata/ais/
