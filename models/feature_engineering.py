@@ -34,6 +34,7 @@ OUTPUT_PATH = 'data/processed/encounter_results.csv'
 EARTH_RADIUS_KM = 6371.0
 KM_PER_DEG_LAT = 110.57
 KM_PER_DEG_LON = 111.32
+KNOT_TO_KMH = 1.852  # 1 knot = 1.852 km/h
 
 THRESHOLD_QUANTILE = 0.05
 COG_THRESHOLD_QUANTILE = 0.95
@@ -69,20 +70,34 @@ def haversine(x1, x2):
 def select_risky_row(group):
     """
     Within a duplicate group (same MMSI + timestamp),
-    select the row with the highest risk score (largest COG/SOG change).
+    select the row with the highest normalized risk score.
+
+    Risk = normalized COG change + normalized SOG change.
+    Normalization uses fixed reference values (not derived from data yet):
+        - COG_REF = 90° (half circle)
+        - SOG_REF = 5 knots (a reasonable maneuver)
+
+    Note: reference values will be replaced by empirical thresholds
+    in a later phase once the full pipeline is validated.
     """
     if len(group) == 1:
         return group
 
+    # Group is already sorted by time (from prior sort in load_data)
     group = group.copy()
 
+    # COG diff with wrap-around
     group['cog_diff_dup'] = (group['cog'].diff() + 180) % 360 - 180
     group['sog_diff_dup'] = group['sog'].diff()
 
-    group['risk_score'] = (
-        group['cog_diff_dup'].abs().fillna(0) +
-        group['sog_diff_dup'].abs().fillna(0)
-    )
+    # Normalize each to a comparable 0-1 scale
+    COG_REF = 90.0   # degrees - half circle
+    SOG_REF = 5.0    # knots - reasonable maneuver
+
+    cog_norm = (group['cog_diff_dup'].abs().fillna(0) / COG_REF).clip(upper=1.0)
+    sog_norm = (group['sog_diff_dup'].abs().fillna(0) / SOG_REF).clip(upper=1.0)
+
+    group['risk_score'] = cog_norm + sog_norm
 
     return group.loc[group['risk_score'].idxmax()].to_frame().T
 
@@ -154,20 +169,37 @@ def compute_dcpa_tcpa(row):
     Compute DCPA (Distance to Closest Point of Approach) and
     TCPA (Time to Closest Point of Approach) for a pair of vessels.
 
+    Units:
+        - SOG is converted from knots to km/h before velocity calculation.
+        - DCPA is in kilometers.
+        - TCPA is in hours.
+        - Sign convention: TCPA > 0 (approaching), < 0 (receding), = 0 (at CPA).
+
+    tcpa_type:
+        - 'dynamic' : relative motion exists (speed_rel_sq > EPS)
+        - 'static'  : no relative motion (speed_rel_sq <= EPS)
+
     Returns:
-        pd.Series with TCPA (hours) and DCPA (km)
+        pd.Series with TCPA (hours), DCPA (km), and tcpa_type (str)
     """
+    # Guard: missing critical inputs
     if (pd.isna(row['cog1']) or pd.isna(row['cog2']) or
-            pd.isna(row['sog1']) or pd.isna(row['sog2'])):
-        return pd.Series({'TCPA': np.nan, 'DCPA': np.nan})
+            pd.isna(row['sog1']) or pd.isna(row['sog2']) or
+            pd.isna(row['lat_rad_1']) or pd.isna(row['lat_rad_2']) or
+            pd.isna(row['lon_rad_1']) or pd.isna(row['lon_rad_2'])):
+        return pd.Series({'TCPA': np.nan, 'DCPA': np.nan, 'tcpa_type': 'unknown'})
 
     cog1_rad = np.radians(row['cog1'])
     cog2_rad = np.radians(row['cog2'])
 
-    vx1 = row['sog1'] * np.sin(cog1_rad)
-    vy1 = row['sog1'] * np.cos(cog1_rad)
-    vx2 = row['sog2'] * np.sin(cog2_rad)
-    vy2 = row['sog2'] * np.cos(cog2_rad)
+    # Convert SOG from knots to km/h to match distance units
+    sog1_kmh = row['sog1'] * KNOT_TO_KMH
+    sog2_kmh = row['sog2'] * KNOT_TO_KMH
+
+    vx1 = sog1_kmh * np.sin(cog1_rad)
+    vy1 = sog1_kmh * np.cos(cog1_rad)
+    vx2 = sog2_kmh * np.sin(cog2_rad)
+    vy2 = sog2_kmh * np.cos(cog2_rad)
 
     vx_rel = vx1 - vx2
     vy_rel = vy1 - vy2
@@ -181,17 +213,27 @@ def compute_dcpa_tcpa(row):
     dx_km = (lon2_rad - lon1_rad) * KM_PER_DEG_LON * np.cos((lat1_rad + lat2_rad) / 2)
     dy_km = (lat2_rad - lat1_rad) * KM_PER_DEG_LAT
 
-    if speed_rel_sq == 0:
-        return pd.Series({'TCPA': 0, 'DCPA': np.sqrt(dx_km ** 2 + dy_km ** 2)})
+    # Guard: no relative motion (both vessels moving identically)
+    EPS = 1e-9
+    if speed_rel_sq < EPS:
+        return pd.Series({
+            'TCPA': 0,
+            'DCPA': np.sqrt(dx_km ** 2 + dy_km ** 2),
+            'tcpa_type': 'static'
+        })
 
     tcpa = -(dx_km * vx_rel + dy_km * vy_rel) / speed_rel_sq
-    tcpa = max(tcpa, 0)
+    # Keep sign: positive = approaching, negative = receding, zero = at CPA
 
     x_cpa = dx_km + tcpa * vx_rel
     y_cpa = dy_km + tcpa * vy_rel
     dcpa = np.sqrt(x_cpa ** 2 + y_cpa ** 2)
 
-    return pd.Series({'TCPA': tcpa, 'DCPA': dcpa})
+    return pd.Series({
+        'TCPA': tcpa,
+        'DCPA': dcpa,
+        'tcpa_type': 'dynamic'
+    })
 
 
 # ==========================================
@@ -260,19 +302,14 @@ def derive_vessel_thresholds(df):
     return threshold_cog, threshold_sog
 
 
-def prepare_vessel_features(df):
-    """Extract one row per MMSI with the features needed for pair merging."""
-    return df[[
-        'mmsi', 'sog', 'cog', 'cog_diff', 'sog_diff', 'lat_rad', 'lon_rad'
-    ]].drop_duplicates(subset=['mmsi']).copy()
-
-
-def process_all_minutes(clean_features, vessel_features):
+def process_all_minutes(clean_features):
     """
     Process all minutes using groupby (fast, no O(N*M) filtering).
-    Returns a DataFrame with all pairs and their DCPA/TCPA.
+    For each minute:
+        - builds vessel_features from that minute only (no time leakage)
+        - computes pairwise distances
+        - computes DCPA/TCPA and tcpa_type
     """
-    # Group by timestamp - much faster than filtering inside a loop
     grouped = clean_features.groupby('base_date_time')
 
     all_pairs = []
@@ -284,9 +321,14 @@ def process_all_minutes(clean_features, vessel_features):
         if len(df_minute) < MIN_VESSELS_PER_MINUTE:
             continue
 
+        # Build vessel_features from THIS minute only (no time leakage)
+        vessel_features_minute = df_minute[[
+            'mmsi', 'sog', 'cog', 'cog_diff', 'sog_diff', 'lat_rad', 'lon_rad'
+        ]].copy()
+
         distances_df = calc_distances_for_minute(df_minute)
-        result = merge_pair_features(distances_df, vessel_features)
-        result[['TCPA', 'DCPA']] = result.apply(compute_dcpa_tcpa, axis=1)
+        result = merge_pair_features(distances_df, vessel_features_minute)
+        result[['TCPA', 'DCPA', 'tcpa_type']] = result.apply(compute_dcpa_tcpa, axis=1)
         result['base_date_time'] = minute
 
         all_pairs.append(result)
@@ -319,6 +361,7 @@ def flag_anomalies(valid_results, distance_threshold, tcpa_threshold, dcpa_thres
     """Flag true anomalies based on empirical thresholds."""
     valid_results['anomaly_dcpa_tcpa'] = (
         (valid_results['DCPA'] < dcpa_threshold) &
+        (valid_results['TCPA'] >= 0) &                # approaching only
         (valid_results['TCPA'] < tcpa_threshold) &
         (valid_results['distance_km'] < distance_threshold)
     )
@@ -364,12 +407,8 @@ def main():
     # Step 5: Convert to radians
     clean_features = add_radians(clean_features)
 
-    # Step 6: Prepare vessel features
-    vessel_features = prepare_vessel_features(clean_features)
-
-    # Step 7: Process all minutes
-    all_results = process_all_minutes(clean_features, vessel_features)
-    print(f"\nTotal pairs across all minutes: {len(all_results)}")
+    # Step 6: Process all minutes (vessel features built per-minute)
+    all_results = process_all_minutes(clean_features)
 
     if len(all_results) == 0:
         print("No valid pairs to analyze.")
