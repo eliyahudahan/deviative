@@ -301,6 +301,36 @@ def derive_vessel_thresholds(df):
 
     return threshold_cog, threshold_sog
 
+def classify_movement_state(row):
+    """
+    Classify a vessel pair into one of these states:
+        - 'anchored' : both vessels nearly stationary (sog < 0.5)
+        - 'towing'   : similar speed & course, stable distance
+        - 'static'   : no relative motion (tcpa_type == 'static')
+        - 'moving'   : otherwise (normal motion)
+        - 'unknown'  : missing data or ambiguous
+    """
+    sog1, sog2 = row['sog1'], row['sog2']
+    cog1, cog2 = row['cog1'], row['cog2']
+    tcpa_type = row['tcpa_type']
+
+    if pd.isna(sog1) or pd.isna(sog2) or pd.isna(cog1) or pd.isna(cog2):
+        return 'unknown'
+
+    # Anchored: both nearly stationary
+    if sog1 < 0.5 and sog2 < 0.5:
+        return 'anchored'
+
+    # Static: no relative motion (from physics)
+    if tcpa_type == 'static':
+        return 'static'
+
+    # Towing: similar speed & course
+    if abs(sog1 - sog2) < 0.5 and abs((cog1 - cog2 + 180) % 360 - 180) < 10:
+        return 'towing'
+
+    return 'moving'
+
 
 def process_all_minutes(clean_features):
     """
@@ -330,13 +360,14 @@ def process_all_minutes(clean_features):
         result = merge_pair_features(distances_df, vessel_features_minute)
         result[['TCPA', 'DCPA', 'tcpa_type']] = result.apply(compute_dcpa_tcpa, axis=1)
         result['base_date_time'] = minute
-
+        result['movement_state'] = result.apply(classify_movement_state, axis=1)
         all_pairs.append(result)
 
     if not all_pairs:
         return pd.DataFrame()
 
     return pd.concat(all_pairs, ignore_index=True)
+
 
 
 def derive_pair_thresholds(all_results):
@@ -420,13 +451,19 @@ def main():
     # Step 9: Flag anomalies
     valid = flag_anomalies(valid, dist_th, tcpa_th, dcpa_th)
 
+    # Step 9.5: Print movement state distribution
+    print("\n=== Movement State Distribution ===")
+    print(valid['movement_state'].value_counts())
+    print("\n=== Movement State × Anomaly Crosstab ===")
+    print(pd.crosstab(valid['movement_state'], valid['anomaly_dcpa_tcpa']))
+     
     # Step 10: Save
     save_results(valid, OUTPUT_PATH)
 
     print("\n" + "=" * 50)
     print("Pipeline complete.")
     print("=" * 50)
-
+    
 
 if __name__ == "__main__":
     main()
