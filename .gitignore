@@ -35,8 +35,12 @@ raw_data/
 # Block all CSVs inside data/processed
 data/processed/*.csv
 
-# But allow the encounter results
-!data/processed/encounter_results.csv
+# Block large CSVs – only allow small sample
+# encounter_results.csv excluded (288MB > GitHub limit)
+# sample provided instead
+
+# Allow only the sample
+!data/processed/encounter_results_sample.csv
 
 
 # Ignore raw AIS data (very large)

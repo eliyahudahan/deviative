@@ -130,6 +130,7 @@ def calc_distances_for_minute(df_minute):
 def merge_pair_features(distances_df, vessel_features):
     """
     Merge pairwise distances with vessel features for both vessels.
+    Includes sog, cog, diffs, radians, length, and vessel_type.
     """
     result = pd.merge(
         distances_df,
@@ -140,7 +141,9 @@ def merge_pair_features(distances_df, vessel_features):
             'cog_diff': 'cog_diff_1',
             'sog_diff': 'sog_diff_1',
             'lat_rad': 'lat_rad_1',
-            'lon_rad': 'lon_rad_1'
+            'lon_rad': 'lon_rad_1',
+            'length': 'length_1',
+            'vessel_type': 'vessel_type_1'
         }),
         on='mmsi1',
         how='left'
@@ -155,7 +158,9 @@ def merge_pair_features(distances_df, vessel_features):
             'cog_diff': 'cog_diff_2',
             'sog_diff': 'sog_diff_2',
             'lat_rad': 'lat_rad_2',
-            'lon_rad': 'lon_rad_2'
+            'lon_rad': 'lon_rad_2',
+            'length': 'length_2',
+            'vessel_type': 'vessel_type_2'
         }),
         on='mmsi2',
         how='left'
@@ -235,6 +240,84 @@ def compute_dcpa_tcpa(row):
         'tcpa_type': 'dynamic'
     })
 
+def compute_dcpa_tcpa_vectorized(df):
+    """
+    Vectorized version of compute_dcpa_tcpa.
+    Operates on entire DataFrame columns at once.
+    """
+    # Guard: filter valid rows
+    valid_mask = (
+        df['cog1'].notna() & df['cog2'].notna() &
+        df['sog1'].notna() & df['sog2'].notna() &
+        df['lat_rad_1'].notna() & df['lat_rad_2'].notna() &
+        df['lon_rad_1'].notna() & df['lon_rad_2'].notna()
+    )
+
+    df['TCPA'] = np.nan
+    df['DCPA'] = np.nan
+    df['tcpa_type'] = 'unknown'
+
+    if valid_mask.sum() == 0:
+        return df
+
+    sub = df[valid_mask]
+
+    cog1_rad = np.radians(sub['cog1'].astype(float).values)
+    cog2_rad = np.radians(sub['cog2'].astype(float).values)
+
+    sog1_kmh = sub['sog1'].astype(float).values * KNOT_TO_KMH
+    sog2_kmh = sub['sog2'].astype(float).values * KNOT_TO_KMH
+
+    vx1 = sog1_kmh * np.sin(cog1_rad)
+    vy1 = sog1_kmh * np.cos(cog1_rad)
+    vx2 = sog2_kmh * np.sin(cog2_rad)
+    vy2 = sog2_kmh * np.cos(cog2_rad)
+
+    vx_rel = vx1 - vx2
+    vy_rel = vy1 - vy2
+    speed_rel_sq = vx_rel ** 2 + vy_rel ** 2
+
+    lat1_rad = sub['lat_rad_1'].values
+    lat2_rad = sub['lat_rad_2'].values
+    lon1_rad = sub['lon_rad_1'].values
+    lon2_rad = sub['lon_rad_2'].values
+
+    dx_km = (lon2_rad - lon1_rad) * KM_PER_DEG_LON * np.cos((lat1_rad + lat2_rad) / 2)
+    dy_km = (lat2_rad - lat1_rad) * KM_PER_DEG_LAT
+
+    EPS = 1e-9
+    static_mask = speed_rel_sq < EPS
+    dynamic_mask = ~static_mask
+
+    tcpa_arr = np.zeros(len(sub))
+    dcpa_arr = np.zeros(len(sub))
+    type_arr = np.empty(len(sub), dtype=object)
+
+    if static_mask.sum() > 0:
+        dcpa_arr[static_mask] = np.sqrt(
+            dx_km[static_mask] ** 2 + dy_km[static_mask] ** 2
+        )
+        type_arr[static_mask] = 'static'
+
+    if dynamic_mask.sum() > 0:
+        tcpa_dyn = -(
+            dx_km[dynamic_mask] * vx_rel[dynamic_mask] +
+            dy_km[dynamic_mask] * vy_rel[dynamic_mask]
+        ) / speed_rel_sq[dynamic_mask]
+
+        x_cpa = dx_km[dynamic_mask] + tcpa_dyn * vx_rel[dynamic_mask]
+        y_cpa = dy_km[dynamic_mask] + tcpa_dyn * vy_rel[dynamic_mask]
+        dcpa_dyn = np.sqrt(x_cpa ** 2 + y_cpa ** 2)
+
+        tcpa_arr[dynamic_mask] = tcpa_dyn
+        dcpa_arr[dynamic_mask] = dcpa_dyn
+        type_arr[dynamic_mask] = 'dynamic'
+
+    df.loc[valid_mask, 'TCPA'] = tcpa_arr
+    df.loc[valid_mask, 'DCPA'] = dcpa_arr
+    df.loc[valid_mask, 'tcpa_type'] = type_arr
+
+    return df
 
 # ==========================================
 # 4. Pipeline Functions
@@ -243,6 +326,10 @@ def load_data(path):
     """Load AIS features CSV and sort by vessel and time."""
     df = pd.read_csv(path)
     df['base_date_time'] = pd.to_datetime(df['base_date_time'])
+    
+    # Round to nearest minute (remove seconds)
+    df['base_date_time'] = df['base_date_time'].dt.floor('min')
+    
     df = df.sort_values(['mmsi', 'base_date_time']).reset_index(drop=True)
     return df
 
@@ -331,44 +418,163 @@ def classify_movement_state(row):
 
     return 'moving'
 
-
-def process_all_minutes(clean_features):
+def process_all_minutes(clean_features, output_path='data/processed/pairs_temp.csv'):
     """
-    Process all minutes using groupby (fast, no O(N*M) filtering).
-    For each minute:
-        - builds vessel_features from that minute only (no time leakage)
-        - computes pairwise distances
-        - computes DCPA/TCPA and tcpa_type
+    Process all minutes, writing results incrementally to disk.
+    Avoids holding all pairs in memory.
     """
     grouped = clean_features.groupby('base_date_time')
-
-    all_pairs = []
     total_groups = len(grouped)
 
     print(f"\nTotal minutes to process: {total_groups}")
 
+    first_write = True
+    total_pairs = 0
+
     for minute, df_minute in grouped:
         if len(df_minute) < MIN_VESSELS_PER_MINUTE:
             continue
+        if (df_minute['sog'] < 0.5).all():
+            continue
 
-        # Build vessel_features from THIS minute only (no time leakage)
         vessel_features_minute = df_minute[[
-            'mmsi', 'sog', 'cog', 'cog_diff', 'sog_diff', 'lat_rad', 'lon_rad'
+            'mmsi', 'sog', 'cog', 'cog_diff', 'sog_diff',
+            'lat_rad', 'lon_rad', 'length', 'vessel_type'
         ]].copy()
+
+        # Ensure numeric types
+        for col in ['sog', 'cog', 'cog_diff', 'sog_diff', 'lat_rad', 'lon_rad', 'length']:
+            vessel_features_minute[col] = pd.to_numeric(
+                vessel_features_minute[col], errors='coerce'
+            )
 
         distances_df = calc_distances_for_minute(df_minute)
         result = merge_pair_features(distances_df, vessel_features_minute)
-        result[['TCPA', 'DCPA', 'tcpa_type']] = result.apply(compute_dcpa_tcpa, axis=1)
+        result = compute_dcpa_tcpa_vectorized(result)
         result['base_date_time'] = minute
-        result['movement_state'] = result.apply(classify_movement_state, axis=1)
-        all_pairs.append(result)
 
-    if not all_pairs:
-        return pd.DataFrame()
+        # Write incrementally
+        result.to_csv(
+            output_path,
+            mode='w' if first_write else 'a',
+            header=first_write,
+            index=False
+        )
+        first_write = False
+        total_pairs += len(result)
 
-    return pd.concat(all_pairs, ignore_index=True)
+        # Progress every 100 minutes
+        if total_groups > 0 and (total_pairs % 100 == 0):
+            print(f"Progress: {total_pairs} pairs written so far")
+
+    print(f"\n✅ Total pairs written: {total_pairs}")
+    print(f"✅ File: {output_path}")
+
+    # Return path instead of DataFrame (avoid loading 14M rows into memory)
+    return output_path
+
+def analyze_pairs_in_chunks(pairs_path, chunk_size=1_000_000):
+    """
+    Analyze pairs in chunks to avoid memory issues.
+    Uses histograms to compute quantiles precisely without loading all data.
+
+    Returns dict with:
+        - total_valid
+        - distance_threshold
+        - tcpa_threshold
+        - dcpa_threshold
+        - histograms (for potential plotting)
+    """
+    # Histogram bins (fine resolution for accurate quantiles)
+    dcpa_bins = np.linspace(0, 2.0, 1001)
+    tcpa_bins = np.linspace(-1.0, 1.0, 1001)
+    distance_bins = np.linspace(0, 50.0, 1001)
+
+    dcpa_hist = np.zeros(len(dcpa_bins) - 1)
+    tcpa_hist = np.zeros(len(tcpa_bins) - 1)
+    distance_hist = np.zeros(len(distance_bins) - 1)
+
+    total_valid = 0
+
+    print(f"\n=== Analyzing pairs in chunks of {chunk_size:,} ===")
+
+    for i, chunk in enumerate(pd.read_csv(pairs_path, chunksize=chunk_size)):
+        # Coerce to numeric (handles any mixed types from CSV)
+        for col in ['DCPA', 'TCPA', 'distance_km']:
+            chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
+
+        chunk_valid = chunk.dropna(subset=['distance_km', 'TCPA', 'DCPA'])
+        total_valid += len(chunk_valid)
+
+        if len(chunk_valid) > 0:
+            dcpa_hist += np.histogram(chunk_valid['DCPA'], bins=dcpa_bins)[0]
+            tcpa_hist += np.histogram(chunk_valid['TCPA'], bins=tcpa_bins)[0]
+            distance_hist += np.histogram(
+                chunk_valid['distance_km'], bins=distance_bins
+            )[0]
+
+        print(f"  Chunk {i+1}: {len(chunk):,} rows, {len(chunk_valid):,} valid")
 
 
+        # Step 8: Load pairs in chunks (sampled to fit memory)
+    print("\n=== Loading pairs (sampled) ===")
+    
+    chunks = []
+    max_rows = 2_000_000  # 2M rows – fits in ~1GB RAM
+    loaded = 0
+    
+    for chunk in pd.read_csv(pairs_path, chunksize=500_000):
+        # Take a portion from each chunk to stay under max_rows
+        remaining = max_rows - loaded
+        if remaining <= 0:
+            break
+        take = min(len(chunk), remaining)
+        chunks.append(chunk.head(take))
+        loaded += take
+    
+    valid = pd.concat(chunks, ignore_index=True)
+    print(f"Loaded {len(valid):,} rows (sampled)")
+    
+    # Drop rows with missing critical values
+    valid = valid.dropna(subset=['distance_km', 'TCPA', 'DCPA']).copy()
+    print(f"Valid rows (with DCPA/TCPA): {len(valid):,}")
+    
+    # Add movement_state (compute from tcpa_type)
+    valid['movement_state'] = valid.apply(classify_movement_state, axis=1)
+
+    # Compute quantiles from histograms
+    def hist_quantile(hist, bins, q):
+        cumsum = np.cumsum(hist)
+        if cumsum[-1] == 0:
+            return 0.0
+        target = cumsum[-1] * q
+        idx = np.searchsorted(cumsum, target)
+        if idx >= len(bins) - 1:
+            idx = len(bins) - 2
+        return bins[idx]
+
+    distance_threshold = max(hist_quantile(distance_hist, distance_bins, 0.05), 0.001)
+    tcpa_threshold = max(hist_quantile(tcpa_hist, tcpa_bins, 0.05), 0.001)
+    dcpa_threshold = max(hist_quantile(dcpa_hist, dcpa_bins, 0.05), 0.001)
+
+    print(f"\n=== Results (from chunks) ===")
+    print(f"Total valid pairs: {total_valid:,}")
+    print(f"\nDistance threshold (5th percentile): {distance_threshold:.4f} km")
+    print(f"TCPA threshold (5th percentile): {tcpa_threshold:.4f} hours")
+    print(f"DCPA threshold (5th percentile): {dcpa_threshold:.4f} km")
+
+    return {
+        'total_valid': total_valid,
+        'distance_threshold': distance_threshold,
+        'tcpa_threshold': tcpa_threshold,
+        'dcpa_threshold': dcpa_threshold,
+        'dcpa_hist': dcpa_hist,
+        'tcpa_hist': tcpa_hist,
+        'distance_hist': distance_hist,
+        'dcpa_bins': dcpa_bins,
+        'tcpa_bins': tcpa_bins,
+        'distance_bins': distance_bins,
+    }
 
 def derive_pair_thresholds(all_results):
     """Derive empirical thresholds for distance, TCPA, DCPA from the data."""
@@ -408,6 +614,55 @@ def flag_anomalies(valid_results, distance_threshold, tcpa_threshold, dcpa_thres
 
     return valid_results
 
+def flag_anomalies_per_state(valid_results,
+                              dcpa_moving=0.1982,
+                              tcpa_moving=0.0293,
+                              distance_moving=1.0):
+    """
+    Flag anomalies using per-state thresholds.
+
+    Only 'moving' state is considered for real anomalies.
+    Thresholds are derived from 2nd Derivative on the 'moving' subset:
+        - DCPA: 0.1982 km (198 meters)
+        - TCPA: 0.0293 hours (1.76 minutes)
+        - Distance: 1.0 km (safety distance guard)
+
+    'anchored' and 'towing' are excluded (not real encounters).
+
+    Args:
+        valid_results: DataFrame with movement_state, DCPA, TCPA, distance_km
+        dcpa_moving: DCPA threshold for moving state (2nd derivative)
+        tcpa_moving: TCPA threshold for moving state (2nd derivative)
+        distance_moving: distance threshold for moving state
+
+    Returns:
+        DataFrame with 'anomaly_dcpa_tcpa' column
+    """
+    valid_results['anomaly_dcpa_tcpa'] = (
+        (valid_results['movement_state'] == 'moving') &
+        (valid_results['DCPA'] < dcpa_moving) &
+        (valid_results['TCPA'] >= 0) &
+        (valid_results['TCPA'] < tcpa_moving) &
+        (valid_results['distance_km'] < distance_moving)
+    )
+
+    total = valid_results['anomaly_dcpa_tcpa'].sum()
+    print(f"\n=== Anomalies (moving only, 2nd derivative thresholds) ===")
+    print(f"DCPA threshold: {dcpa_moving:.4f} km ({dcpa_moving*1000:.1f} m)")
+    print(f"TCPA threshold: {tcpa_moving:.4f} hours ({tcpa_moving*60:.2f} min)")
+    print(f"Distance threshold: {distance_moving:.4f} km")
+    print(f"\nTotal anomalies: {total:,}")
+
+    print("\n=== Breakdown by movement_state ===")
+    print(valid_results.groupby('movement_state')['anomaly_dcpa_tcpa'].sum())
+
+    if total > 0:
+        print("\n=== Sample Anomalies (moving only) ===")
+        print(valid_results[valid_results['anomaly_dcpa_tcpa']][
+            ['base_date_time', 'mmsi1', 'mmsi2', 'distance_km', 'TCPA', 'DCPA', 'movement_state']
+        ].head(10))
+
+    return valid_results
 
 def save_results(df, path):
     """Save final results to CSV."""
@@ -652,7 +907,105 @@ def print_elbow_summary(elbow_results):
 
                 print(f"{metric:<15} {v1_str:>12} {v2_str:>12} {v3_str:>12}")
 
+def check_vessel_size_effect(valid_results):
+    """
+    Check if vessel length affects DCPA/TCPA thresholds.
+    Only considers approaching pairs (TCPA >= 0).
+    """
+    if 'length_1' not in valid_results.columns:
+        print("Warning: 'length_1' column not available. Skipping.")
+        return
 
+    moving = valid_results[
+        valid_results['movement_state'] == 'moving'
+    ].copy()
+
+    # Filter only approaching pairs for TCPA analysis
+    moving_approaching = moving[moving['TCPA'] >= 0].copy()
+
+    moving_approaching['size_class'] = pd.cut(
+        moving_approaching['length_1'],
+        bins=[0, 50, 150, 10000],
+        labels=['small', 'medium', 'large']
+    )
+
+    print(f"\n{'Size Class':<10} {'n':>8} {'DCPA_q05':>12} {'TCPA_q05':>12} {'DCPA_median':>14}")
+    print("-" * 65)
+
+    for size in ['small', 'medium', 'large']:
+        subset = moving_approaching[moving_approaching['size_class'] == size]
+        if len(subset) > 100:
+            dcpa_q = subset['DCPA'].quantile(0.05)
+            tcpa_q = subset['TCPA'].quantile(0.05)
+            dcpa_med = subset['DCPA'].median()
+            print(f"{size:<10} {len(subset):>8} {dcpa_q:>12.4f} {tcpa_q:>12.4f} {dcpa_med:>14.4f}")
+        else:
+            print(f"{size:<10} {len(subset):>8} (not enough data)")
+
+def check_vessel_speed_effect(valid_results):
+    """
+    Check if vessel speed affects DCPA/TCPA thresholds.
+    Only considers approaching pairs (TCPA >= 0).
+    """
+    moving = valid_results[
+        valid_results['movement_state'] == 'moving'
+    ].copy()
+
+    moving['avg_sog'] = (moving['sog1'] + moving['sog2']) / 2
+
+    # Filter only approaching pairs
+    moving_approaching = moving[moving['TCPA'] >= 0].copy()
+
+    moving_approaching['speed_class'] = pd.cut(
+        moving_approaching['avg_sog'],
+        bins=[0, 5, 15, 100],
+        labels=['slow', 'medium', 'fast']
+    )
+
+    print(f"\n{'Speed Class':<12} {'n':>8} {'DCPA_q05':>12} {'TCPA_q05':>12} {'DCPA_median':>14}")
+    print("-" * 70)
+
+    for speed in ['slow', 'medium', 'fast']:
+        subset = moving_approaching[moving_approaching['speed_class'] == speed]
+        if len(subset) > 100:
+            dcpa_q = subset['DCPA'].quantile(0.05)
+            tcpa_q = subset['TCPA'].quantile(0.05)
+            dcpa_med = subset['DCPA'].median()
+            print(f"{speed:<12} {len(subset):>8} {dcpa_q:>12.4f} {tcpa_q:>12.4f} {dcpa_med:>14.4f}")
+        else:
+            print(f"{speed:<12} {len(subset):>8} (not enough data)")
+
+def sanity_check_thresholds(valid_results):
+    """
+    Compare old (5th percentile) and new (2nd derivative) thresholds.
+    """
+    # OLD thresholds
+    dcpa_old = valid_results['DCPA'].quantile(0.05)
+    tcpa_old = valid_results['TCPA'].quantile(0.05)
+
+    # NEW thresholds (from 2nd derivative)
+    dcpa_new = 0.1956
+    tcpa_new = 0.0276
+
+    # Count with OLD (moving only)
+    moving = valid_results[valid_results['movement_state'] == 'moving']
+    anomalies_old = (
+        (moving['DCPA'] < dcpa_old) &
+        (moving['TCPA'] >= 0) &
+        (moving['TCPA'] < tcpa_old)
+    ).sum()
+
+    # Count with NEW (moving only)
+    anomalies_new = (
+        (moving['DCPA'] < dcpa_new) &
+        (moving['TCPA'] >= 0) &
+        (moving['TCPA'] < tcpa_new)
+    ).sum()
+
+    print(f"\n=== SANITY CHECK ===")
+    print(f"Old threshold anomalies:  {anomalies_old}")
+    print(f"New threshold anomalies:  {anomalies_new}")
+    print(f"Ratio (new/old):          {anomalies_new/anomalies_old if anomalies_old > 0 else 'N/A'}")
 
 # ==========================================
 # 5. Main
@@ -671,25 +1024,91 @@ def main():
     # Step 3: Vessel-level diffs
     clean_features = add_vessel_diffs(clean_features)
 
+    # Step 3.5: Verify columns exist
+    print(f"length in clean_features: {'length' in clean_features.columns}")
+    print(f"vessel_type in clean_features: {'vessel_type' in clean_features.columns}")
+    
     # Step 4: Empirical thresholds (vessel-level)
     derive_vessel_thresholds(clean_features)
 
     # Step 5: Convert to radians
     clean_features = add_radians(clean_features)
 
-    # Step 6: Process all minutes
-    all_results = process_all_minutes(clean_features)
+        # Step 6: Process all minutes (writes to disk)
+    pairs_path = process_all_minutes(clean_features)
 
-    if len(all_results) == 0:
+    if pairs_path is None:
         print("No valid pairs to analyze.")
         return
 
-    # Step 8: Derive pair-level thresholds
-    valid, dist_th, tcpa_th, dcpa_th = derive_pair_thresholds(all_results)
+    # Step 7: Analyze pairs in chunks
+    print("\n" + "=" * 70)
+    print("PAIRS ANALYSIS (CHUNKED)")
+    print("=" * 70)
 
+    analysis = analyze_pairs_in_chunks(pairs_path)
+
+    dist_th = analysis['distance_threshold']
+    tcpa_th = analysis['tcpa_threshold']
+    dcpa_th = analysis['dcpa_threshold']
+
+    print(f"\n✅ Analysis complete. Total valid pairs: {analysis['total_valid']:,}")
+
+    # ==========================================
+    # Step 8: Load pairs (sampled) into memory
+    # ==========================================
+    print("\n=== Loading pairs (sampled) ===")
+
+    chunks = []
+    max_rows = 2_000_000  # ~1.5GB RAM
+    loaded = 0
+
+    for chunk in pd.read_csv(pairs_path, chunksize=500_000):
+        remaining = max_rows - loaded
+        if remaining <= 0:
+            break
+        take = min(len(chunk), remaining)
+        chunks.append(chunk.head(take))
+        loaded += take
+
+    valid = pd.concat(chunks, ignore_index=True)
+    print(f"Loaded {len(valid):,} rows (sampled)")
+
+    # Drop rows with missing critical values
+    valid = valid.dropna(subset=['distance_km', 'TCPA', 'DCPA']).copy()
+    print(f"Valid rows (with DCPA/TCPA): {len(valid):,}")
+
+    # ==========================================
+    # Step 8.5: Compute movement_state
+    # ==========================================
+    print("\n=== Computing movement_state ===")
+    valid['movement_state'] = valid.apply(classify_movement_state, axis=1)
+    print("Movement state distribution:")
+    print(valid['movement_state'].value_counts())
+
+    # ==========================================
     # Step 9: Flag anomalies
-    valid = flag_anomalies(valid, dist_th, tcpa_th, dcpa_th)
+    # ==========================================
+    # Use per-state thresholds (2nd Derivative on moving only)
+    valid = flag_anomalies_per_state(valid)
 
+    # ==========================================
+    # SUMMARY
+    # ==========================================
+    print("\n" + "=" * 70)
+    print("SUMMARY – ANOMALIES AFTER PER-STATE FILTERING")
+    print("=" * 70)
+
+    print(f"\nTotal pairs loaded: {len(valid):,}")
+    print(f"Total anomalies (moving only): {valid['anomaly_dcpa_tcpa'].sum():,}")
+    print(f"Anomaly rate: {valid['anomaly_dcpa_tcpa'].sum() / len(valid) * 100:.4f}%")
+
+    print(f"\nBreakdown by movement_state:")
+    print(valid['movement_state'].value_counts())
+
+    print(f"\nAnomalies by movement_state:")
+    print(valid.groupby('movement_state')['anomaly_dcpa_tcpa'].sum())
+    
     # Step 9.5: Movement state distribution
     print("\n=== Movement State Distribution ===")
     print(valid['movement_state'].value_counts())
@@ -704,6 +1123,17 @@ def main():
     elbow_results = analyze_state_distributions(valid)
     print_elbow_summary(elbow_results)
 
+    # Step 9.7: Check vessel characteristics
+    print("\n" + "=" * 70)
+    print("VESSEL CHARACTERISTICS ANALYSIS")
+    print("=" * 70)
+
+    print("\n=== VESSEL SIZE EFFECT ===")
+    check_vessel_size_effect(valid)
+
+    print("\n=== VESSEL SPEED EFFECT ===")
+    check_vessel_speed_effect(valid)
+ 
     # Step 10: Save
     save_results(valid, OUTPUT_PATH)
 
