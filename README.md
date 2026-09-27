@@ -191,12 +191,35 @@ Anchorage B bounds are approximate (lat 33.70-33.76, lon -118.25 to -118.18).
 
 15.9% of anomalies fall within this zone – may include FP.
 
-Model
-LSTM not included (if applicable): evaluated and documented separately.
+### Model
 
-Vessel size/speed do not alter the base threshold.
+**LSTM not included in v1.0.**
 
-No future maneuver prediction.
+Reason:
+- LSTM Autoencoder requires sequences per pair over time.
+- Continuity check on 2M sampled pairs:
+  - Total unique pairs: 74,972
+  - Pairs with continuous run >= 30 min: **0**
+  - Max continuous run: **5 minutes**
+  - Mean run length: 1.02 minutes
+- The dataset is **event-based**, not trajectory-based.
+- Pairs appear at a single minute and dissolve.
+
+**This is a documented data-driven decision, not a failure.**
+
+The physics-based approach (DCPA/TCPA) does not require sequences
+and provides stable, explainable results.
+
+**Alternatives considered:**
+- Per-vessel LSTM: would require reconstructing single-vessel trajectories.
+  Not applicable to pairwise detection.
+- Graph Neural Network: nodes = vessels, edges = pairs. More complex,
+  not justified for the current dataset.
+- Reference: Olesen (2023) used LSTM for per-vessel trajectories,
+  not for pair encounters.
+
+- **Vessel size/speed** do not alter the base threshold.
+- **No future maneuver prediction.**
 
 What the Model Did NOT See
 Multi-day data – only single day (2025-06-01).
