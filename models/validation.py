@@ -104,6 +104,12 @@ def sanity_check_thresholds(valid_results,
     else:
         print("Ratio: N/A (old = 0)")
 
+    if anomalies_old == 0:
+        print("\n⚠️ NOTE: 5th percentile produced 0 anomalies.")
+        print("   Reason: TCPA 5th percentile is negative,")
+        print("   but we require TCPA >= 0 (approaching).")
+        print("   → 2nd Derivative threshold is necessary.") 
+    
     return {
         'anomalies_old': anomalies_old,
         'anomalies_new': anomalies_new,
@@ -219,3 +225,88 @@ def compute_metrics_proxy(tp, fp, fn):
     print(f"F1:        {f1:.4f}")
 
     return {'precision': precision, 'recall': recall, 'f1': f1}
+
+# ==========================================
+# Additional Diagnostics
+# ==========================================
+def analyze_anchorage_anomalies(valid_results,
+                                  dcpa_th=0.1982, tcpa_th=0.0293,
+                                  distance_th=1.0,
+                                  lat_min=33.70, lat_max=33.76,
+                                  lon_min=-118.25, lon_max=-118.18):
+    """
+    Analyze anomalies within Anchorage B.
+    Check if they are slow-moving vessels (likely FP).
+    """
+    moving = valid_results[valid_results['movement_state'] == 'moving'].copy()
+    anomalies = moving[
+        (moving['DCPA'] < dcpa_th) &
+        (moving['TCPA'] >= 0) &
+        (moving['TCPA'] < tcpa_th) &
+        (moving['distance_km'] < distance_th)
+    ].copy()
+
+    lat_deg = np.degrees(anomalies['lat_rad_1'])
+    lon_deg = np.degrees(anomalies['lon_rad_1'])
+
+    in_anchorage = (
+        lat_deg.between(lat_min, lat_max) &
+        lon_deg.between(lon_min, lon_max)
+    )
+
+    anchorage_anomalies = anomalies[in_anchorage]
+    outside_anomalies = anomalies[~in_anchorage]
+
+    print(f"\n=== ANCHORAGE ANOMALIES ANALYSIS ===")
+    print(f"In Anchorage B: {len(anchorage_anomalies):,}")
+    print(f"Outside:        {len(outside_anomalies):,}")
+
+    if len(anchorage_anomalies) > 0:
+        print(f"\n=== SOG distribution (In Anchorage B) ===")
+        print(anchorage_anomalies['sog1'].describe())
+
+    if len(outside_anomalies) > 0:
+        print(f"\n=== SOG distribution (Outside) ===")
+        print(outside_anomalies['sog1'].describe())
+
+    print(f"\n=== How many are slow (< 2 knots)? ===")
+    if len(anchorage_anomalies) > 0:
+        slow_in = (anchorage_anomalies['sog1'] < 2.0).sum()
+        print(f"In Anchorage B: {slow_in:,} ({slow_in/len(anchorage_anomalies)*100:.1f}%)")
+    if len(outside_anomalies) > 0:
+        slow_out = (outside_anomalies['sog1'] < 2.0).sum()
+        print(f"Outside:        {slow_out:,} ({slow_out/len(outside_anomalies)*100:.1f}%)")
+
+    return anchorage_anomalies, outside_anomalies
+
+
+def anomaly_rate_by_hour(valid_results,
+                          dcpa_th=0.1982, tcpa_th=0.0293,
+                          distance_th=1.0):
+    """
+    Compute anomaly rate per hour.
+    Helps detect time-dependent behavior.
+    """
+    moving = valid_results[valid_results['movement_state'] == 'moving'].copy()
+    moving['hour'] = moving['base_date_time'].dt.hour
+
+    moving['is_anomaly'] = (
+        (moving['DCPA'] < dcpa_th) &
+        (moving['TCPA'] >= 0) &
+        (moving['TCPA'] < tcpa_th) &
+        (moving['distance_km'] < distance_th)
+    )
+
+    print(f"\n=== ANOMALY RATE BY HOUR ===")
+    print(f"{'Hour':<6} {'n':>10} {'anomalies':>12} {'rate %':>10}")
+    print("-" * 42)
+
+    for hour in range(24):
+        subset = moving[moving['hour'] == hour]
+        if len(subset) == 0:
+            continue
+        n_anom = subset['is_anomaly'].sum()
+        rate = n_anom / len(subset) * 100
+        print(f"{hour:<6} {len(subset):>10,} {n_anom:>12,} {rate:>10.4f}")
+
+    return moving

@@ -59,6 +59,14 @@ from .validation import (
     check_anchorage_zone,
 )
 
+from .validation import (
+    out_of_time_validation,
+    sanity_check_thresholds,
+    manual_inspection,
+    check_anchorage_zone,
+    analyze_anchorage_anomalies,
+    anomaly_rate_by_hour,
+)
 
 # ==========================================
 # Helper: Load sample of pairs into memory
@@ -284,6 +292,24 @@ def main():
     )
 
     # ----------------------------------------
+    
+        # ----------------------------------------
+    # Step 14.5: Additional diagnostics
+    # ----------------------------------------
+    analyze_anchorage_anomalies(
+        valid,
+        dcpa_th=DCPA_THRESHOLD_MOVING,
+        tcpa_th=TCPA_THRESHOLD_MOVING,
+        distance_th=1.0,
+    )
+
+    anomaly_rate_by_hour(
+        valid,
+        dcpa_th=DCPA_THRESHOLD_MOVING,
+        tcpa_th=TCPA_THRESHOLD_MOVING,
+        distance_th=1.0,
+    )
+
     # Step 15: Elbow analysis per state
     # ----------------------------------------
     print("\n" + "=" * 70)
