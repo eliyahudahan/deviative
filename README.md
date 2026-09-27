@@ -47,7 +47,9 @@ Specifically: identify pairs of vessels that are on a collision course (small DC
 - **moving** – otherwise
 
 ### Threshold Selection
+
 Anomaly definition (single source of truth):
+
 ```python
 (movement_state == 'moving') &
 (DCPA < 0.1982 km) &
@@ -196,6 +198,29 @@ Vessel size/speed do not alter the base threshold.
 
 No future maneuver prediction.
 
+What the Model Did NOT See
+Multi-day data – only single day (2025-06-01).
+
+Multi-port data – only San Pedro Bay.
+
+Official accident records – no GT available.
+
+Weather as filter – not used (max wind 13.9 km/h).
+
+Vessel type effect – not modeled.
+
+Vessel size effect – not modeled (DCPA_q05 similar across sizes).
+
+Vessel speed effect – not modeled (DCPA_q05 similar across speeds).
+
+Future maneuver prediction – not predicted.
+
+Historical vessel behavior – not used.
+
+Cargo/draft effects – not modeled.
+
+Communication between vessels – not available.
+
 Sources
 Data
 AIS: MarineCadastre.gov (NOAA/USCG federal repository)
@@ -268,4 +293,3 @@ LSTM Autoencoder (evaluated if signal is found)
 PostgreSQL storage
 
 Streamlit dashboard
-
