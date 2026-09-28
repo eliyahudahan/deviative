@@ -84,15 +84,20 @@ No Precision/Recall/F1 is reported.
 
 Instead: stability, sensitivity, and manual plausibility are documented.
 
-Results
-Data Processing
-Total pairs: 14,049,693
+## Results
 
-Valid pairs (with DCPA/TCPA): 8,180,440
+### Data Processing
+- **Total pairs:** 14,049,693
+- **Valid pairs (with DCPA/TCPA):** 8,180,440
+- **Sample loaded (memory-limited, 8GB RAM):** 1,999,973 rows
+- **Valid sample (after NaN drop):** 1,163,761
 
-Sample loaded (memory-limited, 8GB RAM): 1,999,973 rows
-
-Valid sample (after NaN drop): 1,163,761
+**Note on numbers:**
+- Full analysis: 8,180,440 valid pairs → **5,170 anomalies** (23.09.2026 run, not in DB)
+- DB loaded: 1,163,761 rows (representative 14% sample) → **4,372 anomalies**
+- The DB reflects a sampled subset, not the full 8.18M-pair analysis.
+- Difference (5,170 → 4,372) is ~15% – expected for a 14% sample.
+- Both are documented; neither is a contradiction.
 
 Movement States (sample)
 State	Count	%
