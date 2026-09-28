@@ -1,12 +1,14 @@
 # ⚓ Deviative – Maritime Encounter Detection
 
-**Portfolio project demonstrating vessel encounter detection in San Pedro Bay using AIS data and physics-based DCPA/TCPA analysis.**
+**Portfolio project demonstrating vessel encounter detection in San Pedro Bay
+using AIS data and physics-based DCPA/TCPA analysis.**
 
 ---
 
 ## For Whom
 
-**This is a portfolio project** demonstrating ability to develop maritime anomaly detection systems.
+**This is a portfolio project** demonstrating ability to develop maritime
+anomaly detection systems.
 
 - **Intended use:** Vessel Traffic Service (VTS) operations
 - **User:** VTS watchkeeper
@@ -17,38 +19,44 @@
 
 ## Problem
 
-Detect potentially dangerous encounters between vessels in San Pedro Bay using AIS data and physics-based navigation principles.
+Detect potentially dangerous encounters between vessels in San Pedro Bay
+using AIS data and physics-based navigation principles.
 
-Specifically: identify pairs of vessels that are on a collision course (small DCPA) and approaching (small positive TCPA), while filtering out routine anchorage and towing activity.
+Specifically: identify pairs of vessels that are on a collision course
+(small DCPA) and approaching (small positive TCPA), while filtering out
+routine anchorage and towing activity.
 
 ---
 
 ## Method
 
 ### Pipeline
+
 1. Load AIS data (rounded to nearest minute)
 2. Remove duplicate rows (keep most risky per MMSI+minute)
 3. Compute vessel-level diffs (COG, SOG)
 4. Compute pairwise distances (Haversine)
 5. Compute DCPA/TCPA (physics-based)
-6. Classify movement state (anchored/towing/moving)
-7. Derive per-state thresholds (2nd Derivative on moving)
-8. Flag anomalies (moving only)
+6. Classify movement state (anchored/towing/static/moving)
+7. Derive per-state thresholds (2nd Derivative on `moving`)
+8. Flag anomalies (`moving` only)
 
 ### Physics
+
 - **DCPA** – Distance to Closest Point of Approach (km)
 - **TCPA** – Time to Closest Point of Approach (hours)
-- **Sign convention:** TCPA > 0 (approaching), < 0 (receding)
+- **Sign convention:** `TCPA > 0` (approaching), `< 0` (receding)
 
 ### Movement State Classification
+
 - **anchored** – both vessels nearly stationary (SOG < 0.5)
 - **towing** – similar speed & course
-- **static** – no relative motion
+- **static** – no relative motion (relative speed ≈ 0)
 - **moving** – otherwise
 
 ### Threshold Selection
 
-Anomaly definition (single source of truth):
+**Anomaly definition (single source of truth):**
 
 ```python
 (movement_state == 'moving') &
@@ -58,11 +66,14 @@ Anomaly definition (single source of truth):
 (distance_km < 1.0 km)
 Why 2nd Derivative?
 
-The 5th percentile threshold (DCPA=8.3m, TCPA=-0.0663h) produced 0 anomalies after the TCPA ≥ 0 filter (5th percentile TCPA is negative).
+The 5th percentile threshold (DCPA = 8.3 m, TCPA = −0.0663 h) produced
+0 anomalies after the TCPA ≥ 0 filter (5th percentile TCPA is negative).
 
-The 2nd Derivative of the KDE curve identifies the "elbow" of the DCPA distribution (191m) and TCPA distribution (1.77 min).
+The 2nd Derivative of the KDE curve identifies the "elbow" of the DCPA
+distribution (191 m) and TCPA distribution (1.77 min).
 
-These thresholds are stable across multiple runs (DCPA: 191-198m, TCPA: 1.76-1.77 min).
+These thresholds are stable across multiple runs
+(DCPA: 191–198 m, TCPA: 1.76–1.77 min).
 
 Data
 AIS: MarineCadastre.gov – San Pedro Bay, 2025-06-01
@@ -76,28 +87,39 @@ Weather: Not used as a filter (max wind 13.9 km/h – no extreme conditions)
 Ground Truth
 No independent ground truth is available.
 
-There is no official record of "dangerous encounters" or "near-misses" for this dataset. Anomaly labels are detection rules, not verified accident/near-miss labels.
+There is no official record of "dangerous encounters" or "near-misses"
+for this dataset. Anomaly labels are detection rules, not verified
+accident/near-miss labels.
 
 Therefore:
 
 No Precision/Recall/F1 is reported.
 
-Instead: stability, sensitivity, and manual plausibility are documented.
+Instead: stability, sensitivity, and manual plausibility
+are documented.
 
-## Results
+Results
+Data Processing
+Total pairs: 14,049,693
 
-### Data Processing
-- **Total pairs:** 14,049,693
-- **Valid pairs (with DCPA/TCPA):** 8,180,440
-- **Sample loaded (memory-limited, 8GB RAM):** 1,999,973 rows
-- **Valid sample (after NaN drop):** 1,163,761
+Valid pairs (with DCPA/TCPA): 8,180,440
 
-**Note on numbers:**
-- Full analysis: 8,180,440 valid pairs → **5,170 anomalies** (23.09.2026 run, not in DB)
-- DB loaded: 1,163,761 rows (representative 14% sample) → **4,372 anomalies**
-- The DB reflects a sampled subset, not the full 8.18M-pair analysis.
-- Difference (5,170 → 4,372) is ~15% – expected for a 14% sample.
-- Both are documented; neither is a contradiction.
+Sample loaded (memory-limited, 8GB RAM): 1,999,973 rows
+
+Valid sample (after NaN drop): 1,163,761
+
+Note on numbers:
+
+Full analysis: 8,180,440 valid pairs → 5,170 anomalies
+(2026-09-23 run, not in DB)
+
+DB loaded: 1,163,761 rows (representative 14% sample) → 4,372 anomalies
+
+The DB reflects a sampled subset, not the full 8.18M-pair analysis.
+
+Difference (5,170 → 4,372) is ~15% – expected for a 14% sample.
+
+Both are documented; neither is a contradiction.
 
 Movement States (sample)
 State	Count	%
@@ -126,13 +148,16 @@ Test (12:00–24:00): n=329,543, anomalies=2,988, rate=0.9067%
 
 Absolute difference: 0.5397%
 
-Interpretation: Train rate is higher than Test rate (diff: 0.54%). This reflects real diurnal traffic patterns, not overfitting.
+Interpretation: Train rate is higher than Test rate (diff: 0.54%).
+This reflects real diurnal traffic patterns, not overfitting.
 
 Sanity Check (moving only)
 Threshold	DCPA	TCPA	Anomalies
-Old (5th percentile)	0.0083	-0.0663	0
+Old (5th percentile)	0.0083	−0.0663	0
 New (2nd Derivative)	0.1982	0.0293	4,372
-The 5th percentile produced 0 anomalies because TCPA 5th percentile is negative, and we require TCPA ≥ 0. This confirms the 2nd Derivative threshold is necessary.
+The 5th percentile produced 0 anomalies because TCPA 5th percentile is
+negative, and we require TCPA ≥ 0. This confirms the 2nd Derivative
+threshold is necessary.
 
 Temporal Diagnostic (Anomaly Rate by Hour)
 Hour	n	Anomalies	Rate %
@@ -140,7 +165,8 @@ Hour	n	Anomalies	Rate %
 06:00	3,461	73	2.11% (max)
 16:00	16,774	115	0.69% (min)
 22:00	48,928	437	0.89%
-Range: 0.69% – 2.11% (ratio ~3×). Reflects real traffic patterns – morning has fewer but more dangerous encounters.
+Range: 0.69% – 2.11% (ratio ~3×). Reflects real traffic patterns –
+morning has fewer but more dangerous encounters.
 
 Manual Inspection (10 cases, stratified)
 Sample of 10 anomalies showed:
@@ -164,25 +190,33 @@ Mean SOG (outside): 2.20 knots
 
 47.4% of in-zone cases are slow (< 2 knots)
 
-Interpretation: Anchorage B zone is NOT dominated by false positives – mean SOG is 4.15 knots (higher than outside), indicating actual vessel movement. 47.4% are slow, which may be FP (slow drift) – documented as uncertainty.
+Interpretation: Anchorage B zone is NOT dominated by false positives –
+mean SOG is 4.15 knots (higher than outside), indicating actual vessel
+movement. 47.4% are slow, which may be FP (slow drift) – documented as
+uncertainty.
 
 Known Uncertainties
 Data
-Single day (2025-06-01): Threshold derived from one day only. Not validated on other days or ports.
+Single day (2025-06-01): Threshold derived from one day only.
+Not validated on other days or ports.
 
-Single location (San Pedro Bay): Results may not generalize to other ports without retraining.
+Single location (San Pedro Bay): Results may not generalize to other
+ports without retraining.
 
 Ground Truth
-No independent ground truth: No official record of "dangerous encounters" exists.
+No independent ground truth: No official record of "dangerous
+encounters" exists.
 
-Anomaly labels are detection rules, not verified accident/near-miss labels.
+Anomaly labels are detection rules, not verified accident/near-miss
+labels.
 
 Sampling
 Memory-limited sampling: 2M rows from 14M total (14.24%).
 
 Assumption: Chunks have roughly uniform rows-per-minute.
 
-Verification: Hour distribution checked (Max/Min ratio: 2.60 – reasonably uniform).
+Verification: Hour distribution checked
+(Max/Min ratio: 2.60 – reasonably uniform).
 
 Temporal Patterns
 Anomaly rate varies by hour: 0.69% (16:00) to 2.11% (06:00).
@@ -192,39 +226,52 @@ Morning periods may be overrepresented if uniform rate is assumed.
 Anchorage Zone
 No official anchorage boundaries were used.
 
-Anchorage B bounds are approximate (lat 33.70-33.76, lon -118.25 to -118.18).
+Anchorage B bounds are approximate (lat 33.70–33.76, lon −118.25 to −118.18).
 
 15.9% of anomalies fall within this zone – may include FP.
 
-### Model
-
-**LSTM not included in v1.0.**
+Model
+LSTM not included in v1.0.
 
 Reason:
-- LSTM Autoencoder requires sequences per pair over time.
-- Continuity check on 2M sampled pairs:
-  - Total unique pairs: 74,972
-  - Pairs with continuous run >= 30 min: **0**
-  - Max continuous run: **5 minutes**
-  - Mean run length: 1.02 minutes
-- The dataset is **event-based**, not trajectory-based.
-- Pairs appear at a single minute and dissolve.
 
-**This is a documented data-driven decision, not a failure.**
+LSTM Autoencoder requires sequences per pair over time.
+
+Continuity check on 2M sampled pairs:
+
+Total unique pairs: 74,972
+
+Pairs with continuous run ≥ 30 min: 0
+
+Max continuous run: 5 minutes
+
+Mean run length: 1.02 minutes
+
+The dataset is event-based, not trajectory-based.
+
+Pairs appear at a single minute and dissolve.
+
+This is a documented data-driven decision, not a failure.
 
 The physics-based approach (DCPA/TCPA) does not require sequences
 and provides stable, explainable results.
 
-**Alternatives considered:**
-- Per-vessel LSTM: would require reconstructing single-vessel trajectories.
-  Not applicable to pairwise detection.
-- Graph Neural Network: nodes = vessels, edges = pairs. More complex,
-  not justified for the current dataset.
-- Reference: Olesen (2023) used LSTM for per-vessel trajectories,
-  not for pair encounters.
+Alternatives considered:
 
-- **Vessel size/speed** do not alter the base threshold.
-- **No future maneuver prediction.**
+Per-vessel LSTM: would require reconstructing single-vessel trajectories.
+Not applicable to pairwise detection.
+
+Graph Neural Network: nodes = vessels, edges = pairs. More complex,
+not justified for the current dataset.
+
+Reference: Olesen (2023) used LSTM for per-vessel trajectories,
+not for pair encounters.
+
+Also note:
+
+Vessel size/speed do not alter the base threshold.
+
+No future maneuver prediction.
 
 What the Model Did NOT See
 Multi-day data – only single day (2025-06-01).
@@ -249,25 +296,70 @@ Cargo/draft effects – not modeled.
 
 Communication between vessels – not available.
 
+Dashboard
+Interactive dashboard available at:
+
+bash
+streamlit run dashboard.py
+Structure (Nir Etzion standard):
+
+Tab 1 – The Problem: scale of challenge (1.16M encounters),
+movement state distribution, sample table
+
+Tab 2 – The Principles: DCPA/TCPA method, filtering rules,
+thresholds, sample table
+
+Tab 3 – The Results: anomalies, validation summary, top-10 by severity,
+sample table
+
+Requirements:
+
+PostgreSQL running with deviative database loaded
+
+.env file with DB credentials (see .env.example)
+
+Data source: PostgreSQL (not CSV).
+
+Note: Red markers on the map are anomalies detected by threshold
+(not confirmed incidents). No independent ground truth exists.
+
 Sources
 Data
 AIS: MarineCadastre.gov (NOAA/USCG federal repository)
 
 Methodology
-DCPA/TCPA: IMO COLREGs (International Regulations for Preventing Collisions at Sea)
+DCPA/TCPA: Standard parameters for collision risk assessment in
+maritime navigation, within the framework of COLREGs principles
+(International Regulations for Preventing Collisions at Sea).
 
-Ship behavior in encounters: Zhou, Y., Daamen, W., Vellinga, T., & Hoogendoorn, S. P. (2023). Ship behavior during encounters in ports and waterways based on AIS data: From theoretical definitions to empirical findings. Ocean Engineering, 272, Article 113879. TU Delft. DOI: 10.1016/j.oceaneng.2023.113879
+Ship behavior in encounters:
+Zhou, Y., Daamen, W., Vellinga, T., & Hoogendoorn, S. P. (2023).
+Ship behavior during encounters in ports and waterways based on AIS data:
+From theoretical definitions to empirical findings.
+Ocean Engineering, 272, Article 113879. TU Delft.
+DOI: 10.1016/j.oceaneng.2023.113879
 
-Abnormal Maritime Behaviour (LSTM reference): Olesen, K. V. (2023). Enhancing Situation Awareness of Maritime Surveillance Operators using Deep Learning based Abnormal Maritime Behaviour Detection. DTU.
+Abnormal Maritime Behaviour (LSTM reference):
+Olesen, K. V. (2023).
+Enhancing Situation Awareness of Maritime Surveillance Operators using
+Deep Learning based Abnormal Maritime Behaviour Detection. DTU.
 
-Elbow Method: Satopaa, V., Albrecht, J., Irwin, D., & Raghavan, B. (2011). Finding a Knee in a Haystack: Detecting Knee Points in System Behavior.
+Elbow Method:
+Satopaa, V., Albrecht, J., Irwin, D., & Raghavan, B. (2011).
+Finding a Knee in a Haystack: Detecting Knee Points in System Behavior.
 
-Gap Statistic: Tibshirani, R., Walther, G., & Hastie, T. (2001). Estimating the number of clusters in a data set via the gap statistic.
+Gap Statistic:
+Tibshirani, R., Walther, G., & Hastie, T. (2001).
+Estimating the number of clusters in a data set via the gap statistic.
 
 Libraries
 pandas, numpy, scipy, matplotlib, scikit-learn
 
 kneed (Kneedle algorithm)
+
+streamlit, pydeck (dashboard)
+
+sqlalchemy, psycopg2-binary (PostgreSQL)
 
 Project Structure
 text
@@ -283,6 +375,7 @@ deviative/
 │   ├── elbow.py                # KDE, elbow methods, plots
 │   ├── validation.py           # Out-of-time, sanity, manual, anchorage
 │   ├── characteristics.py      # Vessel size/speed effect
+│   ├── db_loader.py            # PostgreSQL loader
 │   └── feature_engineering.py  # Main pipeline
 ├── data/
 │   └── processed/
@@ -293,31 +386,67 @@ deviative/
 │       └── *_distributions.png
 ├── tests/
 ├── Dockerfile
+├── dashboard.py
 ├── requirements.txt
+├── .env.example
 ├── .gitignore
 └── README.md
 How to Run
+1. Clone and Setup
 bash
-# Clone
 git clone https://github.com/eliyahudahan/deviative.git
 cd deviative
-
-# Setup
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-
-# Run pipeline
+2. Run Pipeline (generates encounter results)
+bash
 python -m models.feature_engineering
-Note: pairs_temp.csv is generated by the pipeline (~3.1GB). It is excluded from the repository.
+Note: pairs_temp.csv is generated by the pipeline (~3.1GB).
+It is excluded from the repository.
+
+3. Load into PostgreSQL (Optional but recommended for dashboard)
+bash
+# Copy .env.example to .env and fill credentials
+cp .env.example .env
+
+# Create database (as your user)
+psql -d postgres -c "CREATE DATABASE deviative OWNER $(whoami);"
+
+# Load data
+python -m models.db_loader
+4. Run Dashboard
+bash
+streamlit run dashboard.py
+Dashboard opens at http://localhost:8501.
 
 Status
-Phase 1 complete: Physics-based encounter detection + validation + documentation.
+Phase 1 complete: Physics-based encounter detection + validation +
+documentation + dashboard.
 
-Next phases: (documented but not implemented)
+Implemented:
 
-LSTM Autoencoder (evaluated if signal is found)
+✅ Physics-based DCPA/TCPA detection
 
-PostgreSQL storage
+✅ Movement state classification (anchored/towing/static/moving)
 
-Streamlit dashboard
+✅ Per-state thresholds (2nd Derivative of KDE)
+
+✅ PostgreSQL storage (1,163,761 rows)
+
+✅ Streamlit dashboard (3 tabs, PyDeck map)
+
+✅ Top-10 anomaly ranking (severity = 1 / DCPA×TCPA)
+
+✅ LSTM decision documented (not included – data-driven)
+
+### Out of scope for v1.0
+
+- **Per-vessel trajectory analysis** – requires single-vessel trajectory
+  sequences rather than pair-based observations. This is outside the
+  scope of Deviative.
+- **Multi-day / multi-port validation** – the current dataset covers
+  a single day in a single port. No broader generalization is claimed.
+
+**Scope note:** Deviative v1.0 is limited to the analysis and validation
+described above.
