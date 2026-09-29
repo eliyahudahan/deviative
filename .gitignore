@@ -35,13 +35,9 @@ raw_data/
 # Block all CSVs inside data/processed
 data/processed/*.csv
 
-# Block large CSVs – only allow small sample
-# encounter_results.csv excluded (288MB > GitHub limit)
-# sample provided instead
-
-# Allow only the sample
+# Allow small samples (used by demo / dashboard)
+!data/processed/encounter_results_demo.csv
 !data/processed/encounter_results_sample.csv
-
 
 # Ignore raw AIS data (very large)
 data/ais/
@@ -70,4 +66,4 @@ Thumbs.db
 # ==========================================
 *.pid
 *.seed
-*.pid.lockdata/ais/
+*.pid.lock
