@@ -453,7 +453,8 @@ described above.
 
 ### Live Demo
 
-🔗 **[deviative.streamlit.app](https://deviative.streamlit.app)**
+🔗 **[deviative-demo.streamlit.app](https://deviative-78pbkz3ortv2d6kqvpzfhw.streamlit.app/)**
 
-**Note:** The live demo uses a sampled dataset (~10K rows).
-Full project (1.16M rows) runs locally on PostgreSQL.
+**Note:** The live demo uses a sampled dataset (~10K rows)
+to keep deployment lightweight. The full project (1.16M rows)
+runs locally on PostgreSQL – see **How to Run**.
