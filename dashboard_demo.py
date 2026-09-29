@@ -46,6 +46,11 @@ def load_demo_data():
         st.stop()
 
     df = pd.read_csv(DEMO_CSV)
+
+    # Normalize column names: CSV stores TCPA/DCPA in uppercase,
+    # but the rest of the code expects lowercase.
+    df = df.rename(columns={'TCPA': 'tcpa', 'DCPA': 'dcpa'})
+
     df['base_date_time'] = pd.to_datetime(df['base_date_time'], format='ISO8601')
 
     # Radians → degrees
@@ -307,9 +312,13 @@ with tab3:
     top10 = top10[top10['tcpa'] > 0].copy()
     top10['severity'] = 1.0 / (top10['dcpa'] * top10['tcpa'])
     top10 = top10.nlargest(10, 'severity')[[
-        'base_date_time', 'mmsi1', 'mmsi2',
-        'distance_km', 'tcpa', 'dcpa', 'severity'
-    ]].round(4)
+    'base_date_time', 'mmsi1', 'mmsi2',
+    'distance_km', 'tcpa', 'dcpa', 'severity'
+    ]].copy()
+
+# Round only numeric columns (not datetime)
+for col in ['distance_km', 'tcpa', 'dcpa', 'severity']:
+    top10[col] = top10[col].round(4)
 
     if len(top10) > 0:
         st.dataframe(top10, width="stretch", height=400)
