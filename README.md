@@ -450,3 +450,10 @@ Implemented:
 
 **Scope note:** Deviative v1.0 is limited to the analysis and validation
 described above.
+
+### Live Demo
+
+🔗 **[deviative.streamlit.app](https://deviative.streamlit.app)**
+
+**Note:** The live demo uses a sampled dataset (~10K rows).
+Full project (1.16M rows) runs locally on PostgreSQL.
