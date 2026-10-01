@@ -33,7 +33,7 @@ routine anchorage and towing activity.
 ### Pipeline
 
 1. Load AIS data (rounded to nearest minute)
-2. Remove duplicate rows (keep most risky per MMSI+minute)
+2. Remove duplicate rows (keep most complete per MMSI+minute)
 3. Compute vessel-level diffs (COG, SOG)
 4. Compute pairwise distances (Haversine)
 5. Compute DCPA/TCPA (physics-based)
@@ -218,12 +218,34 @@ Assumption: Chunks have roughly uniform rows-per-minute.
 Verification: Hour distribution checked
 (Max/Min ratio: 2.60 – reasonably uniform).
 
+### Deduplication rule
+
+When multiple records exist for the same (MMSI, timestamp),
+the system keeps the **most complete row** (fewest NaN values).
+Ties are broken by first occurrence.
+
+**Precedent:** NDBC Standard Meteorological Buoy Data as served
+via ERDDAP resolves duplicate station+time records by keeping
+the row with the most non-NaN values. **Precedent, not standard**
+(weather buoys, not AIS).
+
+**Sensitivity (measured):** 3 rules tested
+- A (old, risky): COG_REF=90, SOG_REF=5
+- B (new, complete): fewest NaN
+- C (baseline): first occurrence
+
+**Result:** identical anomaly count across all 3 rules.
+Duplicate variation in this dataset has **negligible impact**
+on conflict detection.
+
+**Status:** documented arbitrary choice.
+
 Temporal Patterns
 Anomaly rate varies by hour: 0.69% (16:00) to 2.11% (06:00).
 
 Morning periods may be overrepresented if uniform rate is assumed.
 
-Anchorage Zone
+### Anchorage Zone
 
 - No official anchorage boundaries were used.
 - Anchorage B bounds are approximate (lat 33.70–33.76, lon −118.25 to −118.18).
