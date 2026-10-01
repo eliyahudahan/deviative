@@ -29,6 +29,7 @@ SOG_THRESHOLD_QUANTILE = 0.95
 # 2nd Derivative thresholds for 'moving' state
 DCPA_THRESHOLD_MOVING = 0.1982   # km (198 meters)
 TCPA_THRESHOLD_MOVING = 0.0293   # hours (1.76 minutes)
+# Guard threshold — NOT data-derived. See README → Known Uncertainties.
 DISTANCE_THRESHOLD_MOVING = 1.0  # km
 
 # ==========================================

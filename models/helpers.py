@@ -45,36 +45,18 @@ def haversine(x1, x2):
 # ==========================================
 def select_risky_row(group):
     """
-    Within a duplicate group (same MMSI + timestamp),
-    select the row with the highest normalized risk score.
-
-    Risk = normalized COG change + normalized SOG change.
-    Normalization uses fixed reference values:
-        - COG_REF = 90 degrees (half circle)
-        - SOG_REF = 5 knots (reasonable maneuver)
-
-    Note: reference values will be replaced by empirical thresholds
-    in a later phase once the full pipeline is validated.
+    Select one row per MMSI+minute group.
+    Rule: keep the most complete row (fewest NaN).
+          Ties broken by first occurrence.
+    Note: documented arbitrary choice — no AIS industry standard.
+    See README → Known Uncertainties.
     """
     if len(group) == 1:
         return group
-
     group = group.copy()
-
-    # COG diff with wrap-around
-    group['cog_diff_dup'] = (group['cog'].diff() + 180) % 360 - 180
-    group['sog_diff_dup'] = group['sog'].diff()
-
-    # Normalize each to a comparable 0-1 scale
-    COG_REF = 90.0
-    SOG_REF = 5.0
-
-    cog_norm = (group['cog_diff_dup'].abs().fillna(0) / COG_REF).clip(upper=1.0)
-    sog_norm = (group['sog_diff_dup'].abs().fillna(0) / SOG_REF).clip(upper=1.0)
-
-    group['risk_score'] = cog_norm + sog_norm
-
-    return group.loc[group['risk_score'].idxmax()].to_frame().T
+    group['_nan_count'] = group.isna().sum(axis=1)
+    group = group.sort_values('_nan_count')
+    return group.drop(columns='_nan_count').iloc[0].to_frame().T
 
 
 # ==========================================

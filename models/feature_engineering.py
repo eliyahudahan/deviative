@@ -4,7 +4,7 @@ Deviative - Main pipeline.
 This module orchestrates the encounter detection pipeline:
 
     1. Load AIS data (rounded to nearest minute)
-    2. Remove duplicate rows (keep most dangerous per MMSI+minute)
+    2. Remove duplicate rows (keep most complete per MMSI+minute)
     3. Compute vessel-level diffs (COG, SOG)
     4. Convert lat/lon to radians
     5. Process all minutes (write pairs incrementally to disk)
@@ -13,12 +13,13 @@ This module orchestrates the encounter detection pipeline:
     8. Compute movement_state per pair
     9. Flag anomalies (per-state thresholds)
    10. Run validation (Out-of-Time, Sanity, Manual, Anchorage)
-   11. Elbow analysis per movement state
-   12. Vessel characteristics analysis
-   13. Save results
+   11. Additional diagnostics (Anchorage anomalies, hourly rate)
+   12. Elbow analysis per movement state
+   13. Vessel characteristics analysis
+   14. Save results
 
 Author: Eliyahu Dahan
-Date: 2026-09-14 (refactored 2026-09-24)
+Date: 2026-09-14 (refactored 2026-09-24, updated 2026-10-01)
 """
 
 # ==========================================
@@ -29,9 +30,9 @@ import pandas as pd
 from .config import (
     INPUT_PATH,
     OUTPUT_PATH,
-    PAIRS_TEMP_PATH,
     DCPA_THRESHOLD_MOVING,
     TCPA_THRESHOLD_MOVING,
+    DISTANCE_THRESHOLD_MOVING,
 )
 from .data_io import (
     load_data,
@@ -57,16 +58,10 @@ from .validation import (
     sanity_check_thresholds,
     manual_inspection,
     check_anchorage_zone,
-)
-
-from .validation import (
-    out_of_time_validation,
-    sanity_check_thresholds,
-    manual_inspection,
-    check_anchorage_zone,
     analyze_anchorage_anomalies,
     anomaly_rate_by_hour,
 )
+
 
 # ==========================================
 # Helper: Load sample of pairs into memory
@@ -97,9 +92,9 @@ def load_pairs_sample(pairs_path, max_rows=2_000_000, chunk_size=500_000):
     """
     print(f"\n=== Loading pairs (proportional sample, max {max_rows:,} rows) ===")
 
-    # ==========================================
+    # ----------------------------------------
     # Pass 1: Count total rows
-    # ==========================================
+    # ----------------------------------------
     print("Pass 1: counting total rows...")
     total_rows = 0
     for chunk in pd.read_csv(pairs_path, chunksize=chunk_size, usecols=['mmsi1']):
@@ -110,13 +105,12 @@ def load_pairs_sample(pairs_path, max_rows=2_000_000, chunk_size=500_000):
         print("File is empty.")
         return pd.DataFrame()
 
-    # Compute sampling fraction
     fraction = min(1.0, max_rows / total_rows)
     print(f"Sampling fraction: {fraction:.4f}")
 
-    # ==========================================
+    # ----------------------------------------
     # Pass 2: Sample proportionally from each chunk
-    # ==========================================
+    # ----------------------------------------
     print("Pass 2: sampling from each chunk...")
     chunks = []
     loaded = 0
@@ -133,32 +127,28 @@ def load_pairs_sample(pairs_path, max_rows=2_000_000, chunk_size=500_000):
     valid = pd.concat(chunks, ignore_index=True)
     print(f"Loaded {len(valid):,} rows (from {n_chunks} chunks)")
 
-    # ==========================================
+    # ----------------------------------------
     # Convert base_date_time to datetime
-    # ISO8601 handles both "2025-06-01" and "2025-06-01 00:00:00"
-    # (some rows written by pandas omit time when 00:00:00)
-    # ==========================================
+    # ----------------------------------------
     valid['base_date_time'] = pd.to_datetime(
         valid['base_date_time'],
         format='ISO8601'
     )
 
-    # Drop rows with missing critical values
     valid = valid.dropna(subset=['distance_km', 'TCPA', 'DCPA']).copy()
     print(f"Valid rows (with DCPA/TCPA): {len(valid):,}")
 
-    # ==========================================
+    # ----------------------------------------
     # TIME RANGE CHECK
-    # ==========================================
+    # ----------------------------------------
     print(f"\n=== TIME RANGE CHECK ===")
     print(f"Min:  {valid['base_date_time'].min()}")
     print(f"Max:  {valid['base_date_time'].max()}")
     print(f"Span: {valid['base_date_time'].max() - valid['base_date_time'].min()}")
 
-    # ==========================================
+    # ----------------------------------------
     # HOUR DISTRIBUTION
-    # Check for time bias in the sample
-    # ==========================================
+    # ----------------------------------------
     hours_dist = valid['base_date_time'].dt.hour.value_counts().sort_index()
     print(f"\n=== HOUR DISTRIBUTION ===")
     print(hours_dist.to_string())
@@ -183,6 +173,7 @@ def load_pairs_sample(pairs_path, max_rows=2_000_000, chunk_size=500_000):
 
     return valid
 
+
 # ==========================================
 # Main pipeline
 # ==========================================
@@ -197,7 +188,7 @@ def main():
     features = load_data(INPUT_PATH)
 
     # ----------------------------------------
-    # Step 2: Remove duplicates
+    # Step 2: Remove duplicates (keep most complete)
     # ----------------------------------------
     clean_features = remove_duplicates(features)
 
@@ -206,7 +197,6 @@ def main():
     # ----------------------------------------
     clean_features = add_vessel_diffs(clean_features)
 
-    # Verify columns exist
     print(f"\nlength in clean_features: {'length' in clean_features.columns}")
     print(f"vessel_type in clean_features: {'vessel_type' in clean_features.columns}")
 
@@ -259,58 +249,64 @@ def main():
 
     # ----------------------------------------
     # Step 11: Out-of-Time Validation
+    # ----------------------------------------
     out_of_time_validation(
-    valid,
-    dcpa_th=DCPA_THRESHOLD_MOVING,
-    tcpa_th=TCPA_THRESHOLD_MOVING,
-    distance_th=1.0,
-    )
-
-    # Step 12: Sanity Check
-    sanity_check_thresholds(
-    valid,
-    dcpa_new=DCPA_THRESHOLD_MOVING,
-    tcpa_new=TCPA_THRESHOLD_MOVING,
-    distance_new=1.0,
-    )
-
-    # Step 13: Manual inspection
-    manual_inspection(
-    valid,
-    dcpa_th=DCPA_THRESHOLD_MOVING,
-    tcpa_th=TCPA_THRESHOLD_MOVING,
-    distance_th=1.0,
-    n_sample=15,
-    )
-
-    # Step 14: Anchorage B check
-    check_anchorage_zone(
-    valid,
-    dcpa_th=DCPA_THRESHOLD_MOVING,
-    tcpa_th=TCPA_THRESHOLD_MOVING,
-    distance_th=1.0,
+        valid,
+        dcpa_th=DCPA_THRESHOLD_MOVING,
+        tcpa_th=TCPA_THRESHOLD_MOVING,
+        distance_th=DISTANCE_THRESHOLD_MOVING,
     )
 
     # ----------------------------------------
-    
-        # ----------------------------------------
-    # Step 14.5: Additional diagnostics
+    # Step 12: Sanity Check
+    # ----------------------------------------
+    sanity_check_thresholds(
+        valid,
+        dcpa_new=DCPA_THRESHOLD_MOVING,
+        tcpa_new=TCPA_THRESHOLD_MOVING,
+        distance_new=DISTANCE_THRESHOLD_MOVING,
+    )
+
+    # ----------------------------------------
+    # Step 13: Manual inspection
+    # ----------------------------------------
+    manual_inspection(
+        valid,
+        dcpa_th=DCPA_THRESHOLD_MOVING,
+        tcpa_th=TCPA_THRESHOLD_MOVING,
+        distance_th=DISTANCE_THRESHOLD_MOVING,
+        n_sample=15,
+    )
+
+    # ----------------------------------------
+    # Step 14: Anchorage B check
+    # ----------------------------------------
+    check_anchorage_zone(
+        valid,
+        dcpa_th=DCPA_THRESHOLD_MOVING,
+        tcpa_th=TCPA_THRESHOLD_MOVING,
+        distance_th=DISTANCE_THRESHOLD_MOVING,
+    )
+
+    # ----------------------------------------
+    # Step 15: Additional diagnostics
     # ----------------------------------------
     analyze_anchorage_anomalies(
         valid,
         dcpa_th=DCPA_THRESHOLD_MOVING,
         tcpa_th=TCPA_THRESHOLD_MOVING,
-        distance_th=1.0,
+        distance_th=DISTANCE_THRESHOLD_MOVING,
     )
 
     anomaly_rate_by_hour(
         valid,
         dcpa_th=DCPA_THRESHOLD_MOVING,
         tcpa_th=TCPA_THRESHOLD_MOVING,
-        distance_th=1.0,
+        distance_th=DISTANCE_THRESHOLD_MOVING,
     )
 
-    # Step 15: Elbow analysis per state
+    # ----------------------------------------
+    # Step 16: Elbow analysis per movement state
     # ----------------------------------------
     print("\n" + "=" * 70)
     print("ELBOW ANALYSIS PER MOVEMENT STATE")
@@ -320,12 +316,12 @@ def main():
     print_elbow_summary(elbow_results)
 
     # ----------------------------------------
-    # Step 16: Vessel characteristics
+    # Step 17: Vessel characteristics
     # ----------------------------------------
     check_vessel_characteristics(valid)
 
     # ----------------------------------------
-    # Step 17: Save results
+    # Step 18: Save results
     # ----------------------------------------
     save_results(valid, OUTPUT_PATH)
 

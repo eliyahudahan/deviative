@@ -224,11 +224,38 @@ Anomaly rate varies by hour: 0.69% (16:00) to 2.11% (06:00).
 Morning periods may be overrepresented if uniform rate is assumed.
 
 Anchorage Zone
-No official anchorage boundaries were used.
 
-Anchorage B bounds are approximate (lat 33.70–33.76, lon −118.25 to −118.18).
+- No official anchorage boundaries were used.
+- Anchorage B bounds are approximate (lat 33.70–33.76, lon −118.25 to −118.18).
+- 15.9% of anomalies fall within this zone – may include FP.
 
-15.9% of anomalies fall within this zone – may include FP.
+### Distance guard (1.0 km) — heuristic, not data-derived
+
+Anomalies require `distance_km < 1.0` in addition to DCPA/TCPA.
+
+**Why this guard exists:**
+DCPA and TCPA describe a *future* event — a predicted encounter.
+`distance_km` is the *current* separation. In a VTS operational
+context, operators act on encounters that are **already close**,
+not only on those geometrically predicted to become close.
+
+**Why 1.0 km:**
+No natural elbow exists within the DCPA/TCPA-filtered subset
+(96,326 pairs); the distribution is already truncated by the
+primary filters. 1.0 km is a defensive cap that suppresses
+"distant but convergent" pairs.
+
+**Sensitivity (measured):**
+- With guard (1.0 km): 4,372 anomalies
+- Without guard: 96,326 anomalies
+- Ratio: 22×
+
+Without the guard, 22% of all `moving` pairs are flagged —
+unusable for an operator. With the guard, the alert load is
+actionable while no ship-to-ship geometry is missed within the
+1 km neighborhood.
+
+**Status:** documented heuristic. Listed under Known Uncertainties.
 
 Model
 LSTM not included in v1.0.
