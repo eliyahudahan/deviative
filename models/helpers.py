@@ -9,11 +9,7 @@ import pandas as pd
 import numpy as np
 from scipy.spatial.distance import pdist
 
-from .config import (
-    EARTH_RADIUS_KM,
-    KM_PER_DEG_LAT,
-    KM_PER_DEG_LON,
-)
+from .config import EARTH_RADIUS_KM
 
 
 # ==========================================
@@ -46,16 +42,23 @@ def haversine(x1, x2):
 def select_risky_row(group):
     """
     Select one row per MMSI+minute group.
+
     Rule: keep the most complete row (fewest NaN).
-          Ties broken by first occurrence.
+          Ties broken by first occurrence — enforced via stable sort.
+
     Note: documented arbitrary choice — no AIS industry standard.
     See README → Known Uncertainties.
     """
     if len(group) == 1:
         return group
+
     group = group.copy()
     group['_nan_count'] = group.isna().sum(axis=1)
-    group = group.sort_values('_nan_count')
+
+    # kind='stable' guarantees that rows with equal _nan_count
+    # preserve their original order — first occurrence wins.
+    group = group.sort_values('_nan_count', kind='stable')
+
     return group.drop(columns='_nan_count').iloc[0].to_frame().T
 
 

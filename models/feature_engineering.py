@@ -19,7 +19,7 @@ This module orchestrates the encounter detection pipeline:
    14. Save results
 
 Author: Eliyahu Dahan
-Date: 2026-09-14 (refactored 2026-09-24, updated 2026-10-01)
+Date: 2026-09-14 (refactored 2026-09-24, updated 2026-10-01, 2026-10-14)
 """
 
 # ==========================================
@@ -33,6 +33,8 @@ from .config import (
     DCPA_THRESHOLD_MOVING,
     TCPA_THRESHOLD_MOVING,
     DISTANCE_THRESHOLD_MOVING,
+    MAX_ROWS_IN_MEMORY,
+    CHUNK_SIZE,
 )
 from .data_io import (
     load_data,
@@ -46,7 +48,10 @@ from .thresholds import (
     process_all_minutes,
     analyze_pairs_in_chunks,
 )
-from .physics import classify_movement_state
+from .physics import (
+    classify_movement_state,
+    classify_movement_state_vectorized,
+)
 from .anomaly import flag_anomalies_per_state
 from .elbow import (
     analyze_state_distributions,
@@ -66,12 +71,14 @@ from .validation import (
 # ==========================================
 # Helper: Load sample of pairs into memory
 # ==========================================
-def load_pairs_sample(pairs_path, max_rows=2_000_000, chunk_size=500_000):
+def load_pairs_sample(pairs_path,
+                      max_rows=MAX_ROWS_IN_MEMORY,
+                      chunk_size=CHUNK_SIZE):
     """
     Load a representative sample of pairs from CSV into memory.
 
     Memory constraint: 8GB RAM - cannot load 14M rows at once.
-    Target: 2M rows (~1.15M valid after dropping NaN).
+    Target: MAX_ROWS_IN_MEMORY rows (config).
 
     Sampling strategy: two-pass proportional across chunks.
         - Pass 1: count total rows (cheap - only reads mmsi1 column).
@@ -84,8 +91,8 @@ def load_pairs_sample(pairs_path, max_rows=2_000_000, chunk_size=500_000):
 
     Args:
         pairs_path: path to pairs_temp.csv
-        max_rows: maximum rows to load (~2M for 8GB RAM)
-        chunk_size: rows per chunk (500K)
+        max_rows: maximum rows to load (from config)
+        chunk_size: rows per chunk (from config)
 
     Returns:
         DataFrame with sampled valid rows.
@@ -234,11 +241,15 @@ def main():
     # ----------------------------------------
     valid = load_pairs_sample(pairs_path)
 
+    if len(valid) == 0:
+        print("No valid pairs to analyze.")
+        return
+
     # ----------------------------------------
-    # Step 9: Compute movement_state
+    # Step 9: Compute movement_state (vectorized)
     # ----------------------------------------
-    print("\n=== Computing movement_state ===")
-    valid['movement_state'] = valid.apply(classify_movement_state, axis=1)
+    print("\n=== Computing movement_state (vectorized) ===")
+    valid['movement_state'] = classify_movement_state_vectorized(valid)
     print("Movement state distribution:")
     print(valid['movement_state'].value_counts())
 

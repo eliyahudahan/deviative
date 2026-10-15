@@ -17,6 +17,12 @@ def get_anomaly_mask(df, dcpa_th, tcpa_th, distance_th):
     """
     Single source of truth for 'anomaly' definition.
 
+    Anomaly = a 'moving' vessel pair where ALL of:
+        - DCPA < dcpa_th            (close closest-point-of-approach)
+        - TCPA >= 0                 (CPA in future — approaching)
+        - TCPA < tcpa_th            (imminent — within threshold)
+        - distance_km < distance_th (currently close — guard)
+
     Used by:
         - flag_anomalies_per_state
         - validation functions
@@ -30,21 +36,6 @@ def get_anomaly_mask(df, dcpa_th, tcpa_th, distance_th):
     )
 
 
-def flag_anomalies(valid_results, distance_threshold, tcpa_threshold, dcpa_threshold):
-    """Legacy: global thresholds (no movement state filter)."""
-    valid_results['anomaly_dcpa_tcpa'] = (
-        (valid_results['DCPA'] < dcpa_threshold) &
-        (valid_results['TCPA'] >= 0) &
-        (valid_results['TCPA'] < tcpa_threshold) &
-        (valid_results['distance_km'] < distance_threshold)
-    )
-
-    total_anomalies = valid_results['anomaly_dcpa_tcpa'].sum()
-    print(f"\n=== Total anomalies detected: {total_anomalies:,} ===")
-
-    return valid_results
-
-
 def flag_anomalies_per_state(valid_results,
                               dcpa_moving=DCPA_THRESHOLD_MOVING,
                               tcpa_moving=TCPA_THRESHOLD_MOVING,
@@ -52,15 +43,15 @@ def flag_anomalies_per_state(valid_results,
     """
     Flag anomalies using per-state thresholds.
 
-    Only 'moving' state is considered.
+    Delegates to get_anomaly_mask — single source of truth.
+    Only 'moving' state is considered (enforced inside the mask).
     DCPA/TCPA thresholds are data-derived (2nd Derivative of KDE).
-    distance_moving is a guard threshold — see README Known Uncertainties.
+    distance_moving is a guard — see README → Known Uncertainties.
     """
-    valid_results['anomaly_dcpa_tcpa'] = (
-        (valid_results['movement_state'] == 'moving') &
-        (valid_results['DCPA'] < dcpa_moving) &
-        (valid_results['TCPA'] >= 0) &
-        (valid_results['TCPA'] < tcpa_moving) &
-        (valid_results['distance_km'] < distance_moving)
+    valid_results['anomaly_dcpa_tcpa'] = get_anomaly_mask(
+        valid_results,
+        dcpa_th=dcpa_moving,
+        tcpa_th=tcpa_moving,
+        distance_th=distance_moving,
     )
     return valid_results

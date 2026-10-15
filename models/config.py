@@ -46,5 +46,12 @@ PLOT_DPI = 100
 # ==========================================
 # Chunked analysis
 # ==========================================
-CHUNK_SIZE = 1_000_000
-MAX_ROWS_IN_MEMORY = 2_000_000
+CHUNK_SIZE = 500_000
+MAX_ROWS_IN_MEMORY = 1_000_000
+
+# ==========================================
+# Movement state classification
+# ==========================================
+ANCHORED_SOG_THRESHOLD = 0.5        # knots — both vessels below = anchored
+TOWING_SOG_DIFF_THRESHOLD = 0.5     # knots — max speed diff for towing
+TOWING_COG_DIFF_THRESHOLD = 10      # degrees — max course diff for towing
