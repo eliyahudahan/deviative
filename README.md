@@ -191,37 +191,14 @@ Mean SOG (outside): 2.22 knots
 
 Interpretation: Anchorage B zone is not dominated by false positives — mean SOG is 3.98 knots (higher than outside). The 15.8% in-zone share reflects vessels in transit through the anchorage, not moored vessels misclassified.
 
-Testing
-41 unit tests covering pipeline logic — no AIS data, no PostgreSQL required.
+# Single class (unit)
+python -m pytest tests/unit/test_anomaly.py::TestAnomalyMask -v
 
-bash
-python -m pytest tests/ -v
-Coverage
-Test Class	Tests	What it verifies
-TestConfig	2	Thresholds and physics constants match README
-TestHaversine	3	Haversine distance computation
-TestSelectRiskyRow	2	Deduplication (keep most complete row)
-TestAddVesselDiffs	2	Per-vessel SOG/COG diffs
-TestAddRadians	1	Latitude/longitude conversion
-TestCalcDistancesForMinute	3	Pairwise distances within a minute
-TestMergePairFeatures	1	Feature merge and renaming
-TestComputeDcpaTcpa	4	DCPA/TCPA row-wise computation
-TestVectorizedConsistency	1	Row-wise ≡ vectorized (1e-6 tolerance)
-TestClassifyMovementState	5	anchored / towing / static / moving / unknown
-TestClassifyMovementStateVectorized	4	Vectorized ≡ row-wise
-TestAnomalyMask	11	Anomaly definition (5 conditions + boundaries)
-TestFlagAnomaliesPerState	2	State-aware wrapper matches source-of-truth mask
-TestPipelineInvariants	4	Reproducibility, guard, split, manual inspection
-Run examples
-bash
-# All tests
-python -m pytest tests/ -v
+# Single test (unit)
+python -m pytest tests/unit/test_physics.py::TestComputeDcpaTcpa::test_head_on_returns_positive_tcpa -v
 
-# Single class
-python -m pytest tests/test_deviative.py::TestAnomalyMask -v
-
-# Single test
-python -m pytest tests/test_deviative.py::TestComputeDcpaTcpa::test_head_on_returns_positive_tcpa -v
+# Integration only
+python -m pytest tests/integration/ -v
 Known Uncertainties
 Data
 Single day (2025-06-01): Threshold derived from one day only.
@@ -334,6 +311,13 @@ Test rate	0.9067%	0.9457%
 Train/Test diff	0.5397%	0.4330%
 Anchorage B in-zone %	15.9%	15.8%
 Interpretation: The change reduced anomaly count by ~49%, because TCPA >= 0 now correctly selects approaching pairs. Prior version was identifying receding pairs that happened to be close.
+
+v1.2 — 2026-10-18
+- Split monolithic test_deviative.py into tests/unit/ (5 files) + tests/integration/ (1 file)
+- Added tests/conftest.py with shared fixtures
+- Added pythonpath=. to pytest.ini (fixes ModuleNotFoundError)
+- Fixed test_pipeline_reproducibility: expects 3 anomalies (data-derived)
+- Total tests: 45 (was 41) — no tests lost, all passing
 
 Other changes in v1.1:
 
@@ -496,7 +480,7 @@ Dashboard opens at http://localhost:8501.
 Run Tests
 bash
 python -m pytest tests/ -v
-41 tests, ~1.5 seconds.
+45 tests, ~0.5 seconds.
 
 Status
 Phase 1 complete: Physics-based encounter detection + validation + documentation + dashboard + tests.
@@ -518,7 +502,7 @@ Implemented
 
 ✅ Ground Truth task mismatch documented
 
-✅ 41 unit tests (pipeline logic)
+✅ 45 tests (41 unit + 4 integration)
 
 Out of scope for v1.0
 Per-vessel trajectory analysis
