@@ -411,7 +411,15 @@ deviative/
 ├── scripts/
 │   └── recompute_elbow.py      # Elbow-only re-run
 ├── tests/
-│   └── test_deviative.py       # 41 unit tests
+│   ├── conftest.py             # Shared fixtures
+│   ├── unit/                   # Isolated unit tests (38)
+│   │   ├── test_config.py      # 2 tests — constants
+│   │   ├── test_helpers.py     # 7 tests — haversine, pairs, merge
+│   │   ├── test_data_io.py     # 3 tests — vessel diffs, radians
+│   │   ├── test_physics.py     # 13 tests — DCPA/TCPA, movement
+│   │   └── test_anomaly.py     # 13 tests — mask, flagging
+│   └── integration/            # End-to-end tests (4)
+│       └── test_pipeline.py    # 4 tests — invariants
 ├── dashboard.py
 ├── dashboard_demo.py
 ├── learning_journal.md
@@ -421,6 +429,42 @@ deviative/
 ├── .env.example
 ├── .gitignore
 └── README.md
+Testing
+
+45 tests, all passing in <1s.
+
+Run all tests:
+
+    pytest
+
+Run unit tests only:
+
+    pytest tests/unit/
+
+Run with verbose output:
+
+    pytest -v
+
+Structure:
+
+    tests/
+    ├── conftest.py              # Shared fixtures
+    ├── unit/                    # 38 isolated unit tests
+    │   ├── test_config.py       # 2 tests — constants
+    │   ├── test_helpers.py      # 7 tests — haversine, pairs, merge
+    │   ├── test_data_io.py      # 3 tests — vessel diffs, radians
+    │   ├── test_physics.py      # 13 tests — DCPA/TCPA, movement
+    │   └── test_anomaly.py      # 13 tests — mask, flagging
+    └── integration/             # 4 end-to-end tests
+        └── test_pipeline.py     # 4 tests — invariants
+
+Properties verified:
+
+- Reproducibility — same input, same anomaly count
+- Distance guard sensitivity — 1.0 km guard strictly reduces anomalies
+- Out-of-time split disjointness — train/test rows disjoint
+- Manual inspection validity — every returned row satisfies full mask
+
 How to Run
 Clone and Setup
 bash
