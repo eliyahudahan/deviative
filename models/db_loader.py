@@ -180,7 +180,7 @@ def load_csv_to_db(csv_path, engine, chunk_size=100_000):
             if_exists='append',
             index=False,
             method='multi',
-            chunksize=10_000
+            chunksize=500
         )
         total_loaded += len(chunk)
         print(f"  Chunk {i+1}: {len(chunk):,} rows (total: {total_loaded:,})")

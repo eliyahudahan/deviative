@@ -30,7 +30,7 @@ st.title("⚓ Deviative – Maritime Encounter Detection")
 st.markdown("*Portfolio demo – San Pedro Bay, 2025-06-01*")
 st.info(
     "**Demo mode** – using a sampled dataset (~10K rows). "
-    "Full project: 1.16M rows in PostgreSQL."
+    "Full project: 582K rows in PostgreSQL."
 )
 st.markdown("---")
 
@@ -206,11 +206,11 @@ tab1, tab2, tab3 = st.tabs([
 with tab1:
     st.subheader("The Problem")
     st.markdown(f"""
-    **San Pedro Bay – 1,163,761 encounters between vessels in a single day**
+    **San Pedro Bay – 582,263 encounters between vessels in a single day**
     *(demo shows {stats['total']:,} sampled rows)*.
 
     - **63.4%** anchored
-    - **36.5%** moving
+    - **36.6%** moving
     - **0.05%** towing
 
     **The challenge:** identify which of the **moving** encounters represent
@@ -264,7 +264,7 @@ with tab2:
     st.markdown("⚪ Moving  |  🔴 Anomaly")
 
     df_moving = df_full[df_full['movement_state'] == 'moving']
-    st.caption(f"Showing {len(df_moving):,} moving encounters (sample of 425,230)")
+    st.caption(f"Showing {len(df_moving):,} moving encounters (sample of 212,876)")
     render_map(df_moving, color_mode='state', radius=point_radius, show_lines=show_lines)
 
     with st.expander("Show sample table (first 500 moving rows)"):
@@ -287,10 +287,10 @@ with tab3:
     )
 
     st.markdown("""
-    **Full project results** (from 1.16M rows in PostgreSQL):
+    **Full project results** (from 582K rows in PostgreSQL):
 
     - **No official Ground Truth exists** – therefore, no Precision/Recall is reported.
-    - **Stability:** Train 1.45% / Test 0.91% anomaly rate (difference: 0.54%)
+    - **Stability:** Train 1.38% / Test 0.95% anomaly rate (difference: 0.43%)
     - **Manual inspection:** 10/10 sampled anomalies are physically plausible
     - **Anchorage B:** 15.9% of anomalies fall within a known anchorage zone
       (mean SOG 4.15 knots – not dominated by false positives)
@@ -301,7 +301,7 @@ with tab3:
     st.markdown("🔴 Anomaly")
 
     df_anom = df_full[df_full['anomaly_dcpa_tcpa'] == True]
-    st.caption(f"Showing {len(df_anom):,} anomalies (sample of 4,372)")
+    st.caption(f"Showing {len(df_anom):,} anomalies (sample of 2,221)")
     render_map(df_anom, color_mode='anomaly', radius=point_radius, show_lines=show_lines)
 
     st.markdown("---")
@@ -320,13 +320,13 @@ with tab3:
 for col in ['distance_km', 'tcpa', 'dcpa', 'severity']:
     top10[col] = top10[col].round(4)
 
-    if len(top10) > 0:
-        st.dataframe(top10, width="stretch", height=400)
-    else:
-        st.info("No anomalies with valid DCPA/TCPA in demo sample.")
+if len(top10) > 0:
+    st.dataframe(top10, width="stretch", height=400)
+else:
+    st.info("No anomalies with valid DCPA/TCPA in demo sample.")
 
-    with st.expander("Show sample anomalies table (first 500 rows)"):
-        st.dataframe(df_anom.head(500), width="stretch", height=400)
+with st.expander("Show sample anomalies table (first 500 rows)"):
+    st.dataframe(df_anom.head(500), width="stretch", height=400)
 
 
 # ==========================================
@@ -337,5 +337,5 @@ st.caption(
     "**Deviative v1.0 – Demo** – Physics-based encounter detection.  \n"
     "Data: MarineCadastre.gov (2025-06-01, San Pedro Bay).  \n"
     "Portfolio project – not for production use.  \n"
-    "Full project (1.16M rows) runs locally on PostgreSQL."
+    "Full project (582K rows) runs locally on PostgreSQL."
 )
