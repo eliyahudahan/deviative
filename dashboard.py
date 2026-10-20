@@ -353,7 +353,8 @@ def render_map(df, color_mode='state', radius=20, show_lines=True):
     center_lat = float(df[['lat_1', 'lat_2']].stack().mean())
     center_lon = float(df[['lon_1', 'lon_2']].stack().mean())
 
-    st.pydeck_chart(pdk.Deck(
+    try:
+        st.pydeck_chart(pdk.Deck(
         layers=layers,
         initial_view_state=pdk.ViewState(
             latitude=center_lat,
@@ -372,6 +373,9 @@ def render_map(df, color_mode='state', radius=20, show_lines=True):
             )
         },
     ))
+    except Exception as e:
+        st.warning('⚠️ Map rendering is unavailable in this browser (WebGL issue). Please switch to Chrome to view the interactive map.')
+
 
 
 # ==========================================
