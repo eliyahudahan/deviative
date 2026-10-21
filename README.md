@@ -512,7 +512,7 @@ Multi-day / multi-port validation
 Scope note: Deviative v1.0 is limited to the analysis and validation described above.
 
 Live Demo
-https://deviative-78pbkz3ortv2d6kqvpzfhw.streamlit.app/
+https://deviative-uvupvvxv43qkxf4qefopgz.streamlit.app/
 
 Note: The live demo uses a sampled dataset (~10K rows). The full project (582K rows) runs locally on PostgreSQL — see How to Run.
 
