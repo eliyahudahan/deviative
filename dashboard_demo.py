@@ -159,27 +159,26 @@ def render_map(df, color_mode='state', radius=20, show_lines=True):
 
     try:
         st.pydeck_chart(pdk.Deck(
-        layers=layers,
-        initial_view_state=pdk.ViewState(
-            latitude=center_lat,
-            longitude=center_lon,
-            zoom=11,
-            pitch=0,
-        ),
-        tooltip={
-            "html": (
-                "<b>Pair:</b> {mmsi_a} / {mmsi_b}<br/>"
-                "<b>Distance:</b> {distance_km} km<br/>"
-                "<b>TCPA:</b> {tcpa} h<br/>"
-                "<b>DCPA:</b> {dcpa} km<br/>"
-                "<b>State:</b> {movement_state}<br/>"
-                "<b>Anomaly:</b> {anomaly_dcpa_tcpa}"
-            )
-        },
-    ))
-    except Exception as e:
+            layers=layers,
+            initial_view_state=pdk.ViewState(
+                latitude=center_lat,
+                longitude=center_lon,
+                zoom=11,
+                pitch=0,
+            ),
+            tooltip={
+                "html": (
+                    "<b>Pair:</b> {mmsi_a} / {mmsi_b}<br/>"
+                    "<b>Distance:</b> {distance_km} km<br/>"
+                    "<b>TCPA:</b> {tcpa} h<br/>"
+                    "<b>DCPA:</b> {dcpa} km<br/>"
+                    "<b>State:</b> {movement_state}<br/>"
+                    "<b>Anomaly:</b> {anomaly_dcpa_tcpa}"
+                )
+            },
+        ))
+    except Exception:
         st.warning('⚠️ Map rendering is unavailable in this browser (WebGL issue). Please switch to Chrome to view the interactive map.')
-
 
 
 # ==========================================
@@ -213,9 +212,9 @@ with tab1:
     **San Pedro Bay – 582,263 encounters between vessels in a single day**
     *(demo shows {stats['total']:,} sampled rows)*.
 
-    - **63.4%** anchored
-    - **36.6%** moving
-    - **0.05%** towing
+    - **{stats['anchored']/stats['total']*100:.1f}%** anchored
+    - **{stats['moving']/stats['total']*100:.1f}%** moving
+    - **{stats['towing']/stats['total']*100:.2f}%** towing
 
     **The challenge:** identify which of the **moving** encounters represent
     real risk, not routine traffic.
@@ -268,7 +267,7 @@ with tab2:
     st.markdown("⚪ Moving  |  🔴 Anomaly")
 
     df_moving = df_full[df_full['movement_state'] == 'moving']
-    st.caption(f"Showing {len(df_moving):,} moving encounters (sample of 212,876)")
+    st.caption(f"Showing {len(df_moving):,} moving encounters in sample")
     render_map(df_moving, color_mode='state', radius=point_radius, show_lines=show_lines)
 
     with st.expander("Show sample table (first 500 moving rows)"):
@@ -305,7 +304,7 @@ with tab3:
     st.markdown("🔴 Anomaly")
 
     df_anom = df_full[df_full['anomaly_dcpa_tcpa'] == True]
-    st.caption(f"Showing {len(df_anom):,} anomalies (sample of 2,221)")
+    st.caption(f"Showing {len(df_anom):,} anomalies in sample (2,221 in full project)")
     render_map(df_anom, color_mode='anomaly', radius=point_radius, show_lines=show_lines)
 
     st.markdown("---")
@@ -316,21 +315,21 @@ with tab3:
     top10 = top10[top10['tcpa'] > 0].copy()
     top10['severity'] = 1.0 / (top10['dcpa'] * top10['tcpa'])
     top10 = top10.nlargest(10, 'severity')[[
-    'base_date_time', 'mmsi1', 'mmsi2',
-    'distance_km', 'tcpa', 'dcpa', 'severity'
+        'base_date_time', 'mmsi1', 'mmsi2',
+        'distance_km', 'tcpa', 'dcpa', 'severity'
     ]].copy()
 
-# Round only numeric columns (not datetime)
-for col in ['distance_km', 'tcpa', 'dcpa', 'severity']:
-    top10[col] = top10[col].round(4)
+    # Round only numeric columns (not datetime)
+    for col in ['distance_km', 'tcpa', 'dcpa', 'severity']:
+        top10[col] = top10[col].round(4)
 
-if len(top10) > 0:
-    st.dataframe(top10, width="stretch", height=400)
-else:
-    st.info("No anomalies with valid DCPA/TCPA in demo sample.")
+    if len(top10) > 0:
+        st.dataframe(top10, width="stretch", height=400)
+    else:
+        st.info("No anomalies with valid DCPA/TCPA in demo sample.")
 
-with st.expander("Show sample anomalies table (first 500 rows)"):
-    st.dataframe(df_anom.head(500), width="stretch", height=400)
+    with st.expander("Show sample anomalies table (first 500 rows)"):
+        st.dataframe(df_anom.head(500), width="stretch", height=400)
 
 
 # ==========================================
